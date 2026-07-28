@@ -1,0 +1,5 @@
+fastapi==0.116.1
+pymodbus==3.11.1
+pyserial==3.5
+uvicorn[standard]==0.35.0
+

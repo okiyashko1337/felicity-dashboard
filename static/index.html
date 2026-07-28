@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Felicity — Modbus Monitor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <main class="mx-auto max-w-5xl px-5 py-10">
+    <header class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <p class="mb-2 text-sm font-semibold uppercase tracking-[0.25em] text-emerald-400">
+          Felicity IVGM15KLP3G1
+        </p>
+        <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Регистры инвертора</h1>
+      </div>
+      <div class="flex items-center gap-2 text-sm text-slate-400">
+        <span id="status-dot" class="h-2.5 w-2.5 rounded-full bg-amber-400"></span>
+        <span id="status">Ожидание данных…</span>
+      </div>
+    </header>
+
+    <section class="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-emerald-950/20">
+      <div class="mb-5 flex flex-wrap gap-x-8 gap-y-2 text-sm text-slate-400">
+        <p>Последнее чтение: <span id="timestamp" class="text-slate-200">—</span></p>
+        <p>Начальный адрес: <span id="start-address" class="text-slate-200">—</span></p>
+      </div>
+      <div id="registers" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"></div>
+    </section>
+  </main>
+
+  <script>
+    const registersElement = document.querySelector("#registers");
+    const timestampElement = document.querySelector("#timestamp");
+    const addressElement = document.querySelector("#start-address");
+    const statusElement = document.querySelector("#status");
+    const statusDot = document.querySelector("#status-dot");
+
+    function setStatus(text, ok) {
+      statusElement.textContent = text;
+      statusDot.className = `h-2.5 w-2.5 rounded-full ${ok ? "bg-emerald-400" : "bg-rose-400"}`;
+    }
+
+    function render(data) {
+      timestampElement.textContent = new Date(data.timestamp).toLocaleString("ru-RU");
+      addressElement.textContent = data.start_address;
+      registersElement.innerHTML = data.registers.map((value, index) => `
+        <article class="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+          <p class="text-xs font-medium uppercase tracking-wider text-slate-500">
+            Регистр ${data.start_address + index}
+          </p>
+          <p class="mt-2 font-mono text-2xl font-semibold text-emerald-300">${value}</p>
+        </article>
+      `).join("");
+      setStatus("Данные получены", true);
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch("/api/current", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+      } catch (error) {
+        setStatus(error.message === "HTTP 404" ? "Ожидание первого опроса…" : "Нет связи с сервером", false);
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>
+
