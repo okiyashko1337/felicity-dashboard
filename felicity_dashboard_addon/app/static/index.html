@@ -27,6 +27,11 @@
     }
     .metric-value { font-variant-numeric: tabular-nums; }
     .chart-wrap { height: 290px; }
+    .day-chart-wrap { height: 340px; }
+    .date-control {
+      color-scheme: dark;
+      background: rgba(2, 6, 23, 0.35);
+    }
     .pulse-dot { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); animation: pulse 2s infinite; }
     @keyframes pulse {
       70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
@@ -117,6 +122,68 @@
         <p class="mt-4 text-sm text-slate-500">Обмен: <span id="grid-power" class="text-slate-300">—</span></p>
         <p class="mt-1 text-xs text-slate-600">Частота: <span id="grid-frequency">—</span> Гц</p>
       </article>
+    </section>
+
+    <section class="panel mb-5 rounded-3xl p-5 sm:p-6">
+      <div class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">История</p>
+          <h2 class="mt-1 text-xl font-semibold text-white">Энергия за выбранный день</h2>
+          <p id="day-status" class="mt-1 text-xs text-slate-500">Загрузка дневной истории…</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="previous-day" class="rounded-xl border border-white/10 bg-black/10 px-4 py-2.5 text-sm text-slate-300 transition hover:border-emerald-400/30 hover:text-white" aria-label="Предыдущий день">←</button>
+          <input id="history-date" type="date" class="date-control rounded-xl border border-white/10 px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-400/40">
+          <button id="next-day" class="rounded-xl border border-white/10 bg-black/10 px-4 py-2.5 text-sm text-slate-300 transition hover:border-emerald-400/30 hover:text-white" aria-label="Следующий день">→</button>
+          <button id="today-day" class="rounded-xl bg-emerald-400/10 px-4 py-2.5 text-sm font-medium text-emerald-300 transition hover:bg-emerald-400/20">Сегодня</button>
+        </div>
+      </div>
+
+      <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <div class="rounded-2xl border border-amber-300/10 bg-amber-300/5 p-4"><p class="text-xs text-slate-500">PV</p><p class="mt-2 text-2xl font-semibold"><span id="stat-pv">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
+        <div class="rounded-2xl border border-sky-300/10 bg-sky-300/5 p-4"><p class="text-xs text-slate-500">Дом</p><p class="mt-2 text-2xl font-semibold"><span id="stat-load">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
+        <div class="rounded-2xl border border-violet-300/10 bg-violet-300/5 p-4"><p class="text-xs text-slate-500">Из сети</p><p class="mt-2 text-2xl font-semibold"><span id="stat-import">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
+        <div class="rounded-2xl border border-fuchsia-300/10 bg-fuchsia-300/5 p-4"><p class="text-xs text-slate-500">В сеть</p><p class="mt-2 text-2xl font-semibold"><span id="stat-export">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
+        <div class="rounded-2xl border border-emerald-300/10 bg-emerald-300/5 p-4"><p class="text-xs text-slate-500">Заряд</p><p class="mt-2 text-2xl font-semibold"><span id="stat-charge">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
+        <div class="rounded-2xl border border-rose-300/10 bg-rose-300/5 p-4"><p class="text-xs text-slate-500">Разряд</p><p class="mt-2 text-2xl font-semibold"><span id="stat-discharge">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
+        <div class="rounded-2xl border border-lime-300/10 bg-lime-300/5 p-4"><p class="text-xs text-slate-500">Своё PV</p><p class="mt-2 text-2xl font-semibold"><span id="stat-self">—</span><span class="ml-1 text-xs text-slate-500">%</span></p></div>
+      </div>
+
+      <div class="rounded-2xl border border-white/5 bg-black/10 p-4 sm:p-5">
+        <div class="mb-3 flex flex-wrap gap-4 text-xs text-slate-400">
+          <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-300"></i>PV</span>
+          <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-400"></i>Дом</span>
+          <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400"></i>Батарея (+ заряд)</span>
+          <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-violet-400"></i>Сеть (+ импорт)</span>
+        </div>
+        <div class="day-chart-wrap"><canvas id="daily-energy-chart" aria-label="Дневной график энергии"></canvas></div>
+      </div>
+    </section>
+
+    <section class="panel mb-5 rounded-3xl p-5 sm:p-6">
+      <div class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-amber-400">Аккумулятор</p>
+          <h2 class="mt-1 text-xl font-semibold text-white">Заряд, разряд и состояние батарей</h2>
+          <p class="mt-1 text-xs text-slate-500">SOC, напряжение, общая мощность, токи обоих BMS и баланс ячеек</p>
+        </div>
+        <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+          <p><span class="text-slate-500">SOC:</span> <span id="battery-day-soc" class="font-medium text-white">—</span></p>
+          <p><span class="text-slate-500">Диапазон:</span> <span id="battery-day-range" class="font-medium text-white">—</span></p>
+          <p><span class="text-slate-500">Напряжение:</span> <span id="battery-day-voltage" class="font-medium text-white">—</span></p>
+          <p><span class="text-slate-500">Ток:</span> <span id="battery-day-current" class="font-medium text-white">—</span></p>
+        </div>
+      </div>
+      <div class="grid gap-5 xl:grid-cols-2">
+        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
+          <h3 class="text-sm font-medium text-slate-300">SOC, мощность и напряжение</h3>
+          <div class="day-chart-wrap mt-3"><canvas id="daily-battery-chart" aria-label="Дневной график аккумулятора"></canvas></div>
+        </div>
+        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
+          <h3 class="text-sm font-medium text-slate-300">Батарейные модули</h3>
+          <div class="day-chart-wrap mt-3"><canvas id="daily-bms-chart" aria-label="Дневной график BMS"></canvas></div>
+        </div>
+      </div>
     </section>
 
     <section class="panel mb-5 rounded-3xl p-5 sm:p-6">
@@ -235,7 +302,7 @@
   <script>
     const MAX_POINTS = 180;
     const SYSTEM_MAX_POINTS = 360;
-    const state = { lastId: null, lastSystemId: null };
+    const state = { lastId: null, lastSystemId: null, analyticsRequest: 0 };
     const $ = (id) => document.getElementById(id);
     const optionalNumber = (value) => value === undefined || value === null ? null : Number(value);
     const apiUrl = (path) => {
@@ -251,6 +318,15 @@
     const timeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", {
       hour: "2-digit", minute: "2-digit", second: "2-digit"
     });
+    const shortTimeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", {
+      hour: "2-digit", minute: "2-digit"
+    });
+    const localDateValue = (date = new Date()) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
     const formatBytes = (bytes) => {
       if (bytes == null) return "—";
       const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
@@ -295,6 +371,63 @@
       pointHoverRadius: 4,
       tension: 0.35,
       fill
+    });
+
+    const dailyEnergyChart = new Chart($("daily-energy-chart"), {
+      type: "line",
+      data: { labels: [], datasets: [
+        lineDataset("PV, кВт", "#fbbf24", true),
+        lineDataset("Дом, кВт", "#38bdf8"),
+        lineDataset("Батарея, кВт", "#34d399"),
+        lineDataset("Сеть, кВт", "#a78bfa")
+      ]},
+      options: {
+        ...commonLineOptions,
+        animation: { duration: 200 },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } },
+          y: { beginAtZero: true, ticks: { maxTicksLimit: 7 }, title: { display: true, text: "кВт" } }
+        }
+      }
+    });
+
+    const dailyBatteryChart = new Chart($("daily-battery-chart"), {
+      type: "line",
+      data: { labels: [], datasets: [
+        { ...lineDataset("SOC, %", "#facc15", true), yAxisID: "soc" },
+        { ...lineDataset("Мощность, кВт", "#34d399"), yAxisID: "power" },
+        { ...lineDataset("Напряжение, В", "#a78bfa"), yAxisID: "voltage" }
+      ]},
+      options: {
+        ...commonLineOptions,
+        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
+          soc: { position: "left", min: 0, max: 100, ticks: { maxTicksLimit: 6 }, title: { display: true, text: "%" } },
+          power: { position: "right", grid: { display: false }, ticks: { maxTicksLimit: 6 }, title: { display: true, text: "кВт" } },
+          voltage: { display: false, min: 45, max: 60 }
+        }
+      }
+    });
+
+    const dailyBmsChart = new Chart($("daily-bms-chart"), {
+      type: "line",
+      data: { labels: [], datasets: [
+        { ...lineDataset("BMS 1 ток, А", "#34d399", true), yAxisID: "current" },
+        { ...lineDataset("BMS 2 ток, А", "#38bdf8"), yAxisID: "current" },
+        { ...lineDataset("BMS 1 Δ, мВ", "#fbbf24"), yAxisID: "delta" },
+        { ...lineDataset("BMS 2 Δ, мВ", "#fb7185"), yAxisID: "delta" }
+      ]},
+      options: {
+        ...commonLineOptions,
+        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
+          current: { position: "left", ticks: { maxTicksLimit: 6 }, title: { display: true, text: "А" } },
+          delta: { position: "right", beginAtZero: true, grid: { display: false }, ticks: { maxTicksLimit: 6 }, title: { display: true, text: "мВ" } }
+        }
+      }
     });
 
     const powerChart = new Chart($("power-chart"), {
@@ -547,6 +680,110 @@
       });
     }
 
+    function setChartData(chart, labels, series) {
+      chart.data.labels = labels;
+      chart.data.datasets.forEach((dataset, index) => {
+        dataset.data = series[index] || [];
+      });
+      chart.update("none");
+    }
+
+    function selectedDayBounds() {
+      const [year, month, day] = $("history-date").value.split("-").map(Number);
+      const start = new Date(year, month - 1, day);
+      const end = new Date(year, month - 1, day + 1);
+      return { start, end };
+    }
+
+    function updateDayNavigation() {
+      const today = localDateValue();
+      $("history-date").max = today;
+      $("next-day").disabled = $("history-date").value >= today;
+      $("next-day").classList.toggle("opacity-30", $("next-day").disabled);
+      $("next-day").classList.toggle("cursor-not-allowed", $("next-day").disabled);
+    }
+
+    function shiftSelectedDay(offset) {
+      const date = new Date(`${$("history-date").value}T12:00:00`);
+      date.setDate(date.getDate() + offset);
+      const nextValue = localDateValue(date);
+      if (nextValue > localDateValue()) return;
+      $("history-date").value = nextValue;
+      updateDayNavigation();
+      loadDailyAnalytics();
+    }
+
+    function updateDailyAnalytics(payload) {
+      const stats = payload.stats;
+      const points = payload.points;
+      const labels = points.map((point) => shortTimeLabel(point.timestamp));
+      const energy = (value) => formatNumber(value || 0, 2);
+
+      $("stat-pv").textContent = energy(stats.pv_kwh);
+      $("stat-load").textContent = energy(stats.load_kwh);
+      $("stat-import").textContent = energy(stats.grid_import_kwh);
+      $("stat-export").textContent = energy(stats.grid_export_kwh);
+      $("stat-charge").textContent = energy(stats.battery_charge_kwh);
+      $("stat-discharge").textContent = energy(stats.battery_discharge_kwh);
+      $("stat-self").textContent = formatNumber(stats.self_consumption_percent || 0, 0);
+
+      setChartData(dailyEnergyChart, labels, [
+        points.map((point) => point.pv_w / 1000),
+        points.map((point) => point.load_w / 1000),
+        points.map((point) => point.battery_w / 1000),
+        points.map((point) => point.grid_w / 1000)
+      ]);
+      setChartData(dailyBatteryChart, labels, [
+        points.map((point) => point.soc_percent),
+        points.map((point) => point.battery_w / 1000),
+        points.map((point) => point.battery_voltage_v)
+      ]);
+      setChartData(dailyBmsChart, labels, [
+        points.map((point) => point.bms1_current_a),
+        points.map((point) => point.bms2_current_a),
+        points.map((point) => point.bms1_delta_mv),
+        points.map((point) => point.bms2_delta_mv)
+      ]);
+
+      const latest = points[points.length - 1];
+      $("battery-day-soc").textContent = stats.soc_end_percent == null
+        ? "—"
+        : `${formatNumber(stats.soc_start_percent, 0)} → ${formatNumber(stats.soc_end_percent, 0)}%`;
+      $("battery-day-range").textContent = stats.soc_min_percent == null
+        ? "—"
+        : `${formatNumber(stats.soc_min_percent, 0)}–${formatNumber(stats.soc_max_percent, 0)}%`;
+      $("battery-day-voltage").textContent = latest ? `${formatNumber(latest.battery_voltage_v, 1)} В` : "—";
+      $("battery-day-current").textContent = latest ? `${formatNumber(latest.battery_current_a, 1)} А` : "—";
+
+      if (!payload.sample_count) {
+        $("day-status").textContent = "За этот день сохранённых данных пока нет";
+      } else {
+        const coveredHours = payload.integrated_seconds / 3600;
+        $("day-status").textContent = `${formatNumber(payload.sample_count)} снимков · учтено ${formatNumber(coveredHours, 1)} ч без разрывов связи`;
+      }
+    }
+
+    async function loadDailyAnalytics() {
+      const requestId = ++state.analyticsRequest;
+      $("day-status").textContent = "Загрузка дневной истории…";
+      const { start, end } = selectedDayBounds();
+      const query = new URLSearchParams({
+        start: start.toISOString(),
+        end: end.toISOString(),
+        max_points: "720"
+      });
+      try {
+        const response = await fetch(apiUrl(`api/analytics?${query}`), { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        if (requestId === state.analyticsRequest) updateDailyAnalytics(payload);
+      } catch (error) {
+        if (requestId === state.analyticsRequest) {
+          $("day-status").textContent = "Не удалось загрузить историю за день";
+        }
+      }
+    }
+
     function updateSystemCards(snapshot) {
       const data = snapshot.data;
       $("system-cpu").textContent = data.cpu_percent == null ? "—" : formatNumber(data.cpu_percent, 1);
@@ -666,8 +903,26 @@
       setInterval(refreshSystem, 60000);
     }
 
+    $("history-date").value = localDateValue();
+    updateDayNavigation();
+    $("history-date").addEventListener("change", () => {
+      updateDayNavigation();
+      loadDailyAnalytics();
+    });
+    $("previous-day").addEventListener("click", () => shiftSelectedDay(-1));
+    $("next-day").addEventListener("click", () => shiftSelectedDay(1));
+    $("today-day").addEventListener("click", () => {
+      $("history-date").value = localDateValue();
+      updateDayNavigation();
+      loadDailyAnalytics();
+    });
+
     start();
     startSystem();
+    loadDailyAnalytics();
+    setInterval(() => {
+      if ($("history-date").value === localDateValue()) loadDailyAnalytics();
+    }, 60000);
   </script>
 </body>
 </html>

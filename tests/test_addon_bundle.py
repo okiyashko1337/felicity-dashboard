@@ -5,6 +5,7 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 ADDON_APP_DIR = PROJECT_DIR / "felicity_dashboard_addon" / "app"
 BUNDLED_FILES = (
+    "analytics.py",
     "app.py",
     "collector.py",
     "config.py",

@@ -9,11 +9,13 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from config import DB_PATH
+from analytics import build_energy_analytics
 from database import (
     get_latest_telemetry,
     get_latest_system_snapshot,
     get_system_history,
     get_telemetry_history,
+    get_telemetry_range,
     initialize_database,
 )
 
@@ -54,6 +56,30 @@ def history(limit: int = Query(default=180, ge=2, le=3600)) -> list[dict]:
         return get_telemetry_history(limit, DB_PATH)
     except sqlite3.Error as error:
         raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
+
+
+@app.get("/api/analytics")
+def analytics(
+    start: datetime,
+    end: datetime,
+    max_points: int = Query(default=720, ge=60, le=1440),
+) -> dict:
+    if start.tzinfo is None or end.tzinfo is None:
+        raise HTTPException(status_code=422, detail="start and end must include timezone")
+    if end <= start:
+        raise HTTPException(status_code=422, detail="end must be after start")
+    if (end - start).total_seconds() > 36 * 3600:
+        raise HTTPException(status_code=422, detail="range cannot exceed 36 hours")
+    try:
+        rows = get_telemetry_range(start, end, DB_PATH)
+        result = build_energy_analytics(rows, max_points=max_points)
+    except sqlite3.Error as error:
+        raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        **result,
+    }
 
 
 @app.get("/api/status")
