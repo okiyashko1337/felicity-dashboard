@@ -1,0 +1,44 @@
+#!/usr/bin/with-contenv bashio
+
+declare inverter_host
+declare inverter_port
+declare poll_interval
+declare system_interval
+
+inverter_host=$(bashio::config 'inverter_host')
+inverter_port=$(bashio::config 'inverter_port')
+poll_interval=$(bashio::config 'poll_interval')
+system_interval=$(bashio::config 'system_interval')
+
+export FELICITY_HOST="${inverter_host}"
+export FELICITY_PORT="${inverter_port}"
+export FELICITY_POLL_INTERVAL_SECONDS="${poll_interval}"
+export FELICITY_DB_PATH="/data/felicity.db"
+export PYTHONUNBUFFERED="1"
+
+bashio::log.info "Starting Felicity collector for ${inverter_host}:${inverter_port}"
+bashio::log.info "Telemetry: ${poll_interval}s; Raspberry Pi metrics: ${system_interval}s"
+
+cd /app || exit 1
+
+/opt/felicity-venv/bin/python collector.py &
+collector_pid=$!
+/opt/felicity-venv/bin/python system_monitor.py --interval "${system_interval}" &
+monitor_pid=$!
+/opt/felicity-venv/bin/uvicorn main:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --proxy-headers &
+web_pid=$!
+
+shutdown() {
+    bashio::log.info "Stopping Felicity Dashboard"
+    kill -TERM "${collector_pid}" "${monitor_pid}" "${web_pid}" 2>/dev/null || true
+    wait "${collector_pid}" "${monitor_pid}" "${web_pid}" 2>/dev/null || true
+}
+
+trap shutdown SIGTERM SIGINT
+wait -n
+exit_code=$?
+shutdown
+exit "${exit_code}"
