@@ -1,14 +1,29 @@
+from __future__ import annotations
+
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from analytics import build_energy_analytics
-from database import get_telemetry_range, initialize_database, save_telemetry_snapshot
+from analytics import build_daily_aggregates, build_energy_analytics, build_period_analytics
+from database import (
+    ensure_energy_daily,
+    get_energy_daily,
+    get_telemetry_range,
+    initialize_database,
+    save_telemetry_snapshot,
+)
 
 
-def telemetry(pv: float, load: float, grid: float, battery: float, soc: float) -> dict:
-    return {
+def telemetry(
+    pv: float,
+    load: float,
+    grid: float,
+    battery: float,
+    soc: float,
+    device_timestamp: str | None = None,
+) -> dict:
+    result = {
         "pv_power_w": {"total": pv},
         "load_power_w": {"total": load},
         "grid_power_w": {"total": grid},
@@ -21,6 +36,9 @@ def telemetry(pv: float, load: float, grid: float, battery: float, soc: float) -
             {"current_a": battery / 106.4, "cell_delta_mv": 5},
         ],
     }
+    if device_timestamp:
+        result["device"] = {"device_timestamp": device_timestamp}
+    return result
 
 
 class AnalyticsTests(unittest.TestCase):
@@ -65,6 +83,99 @@ class AnalyticsTests(unittest.TestCase):
                 )
             rows = get_telemetry_range(start, start + timedelta(days=1), db_path)
         self.assertEqual([row["id"] for row in rows], [1, 2])
+
+    def test_daily_aggregates_use_device_day_and_skip_long_gaps(self) -> None:
+        start = datetime(2026, 7, 30, 21, 59, 58, tzinfo=timezone.utc)
+        rows = [
+            {
+                "timestamp": start.isoformat(),
+                "parsed": telemetry(3600, 1800, 600, 900, 40, "2026-07-30T23:59:58"),
+            },
+            {
+                "timestamp": (start + timedelta(seconds=2)).isoformat(),
+                "parsed": telemetry(3600, 1800, 600, 900, 41, "2026-07-31T00:00:00"),
+            },
+            {
+                "timestamp": (start + timedelta(seconds=4)).isoformat(),
+                "parsed": telemetry(3600, 1800, 600, 900, 42, "2026-07-31T00:00:02"),
+            },
+            {
+                "timestamp": (start + timedelta(minutes=10)).isoformat(),
+                "parsed": telemetry(9000, 9000, 9000, 9000, 43, "2026-07-31T00:09:58"),
+            },
+        ]
+
+        result = build_daily_aggregates(rows)
+
+        self.assertEqual([row["day"] for row in result], ["2026-07-30", "2026-07-31"])
+        self.assertEqual(result[0]["pv_wh"], 0)
+        self.assertEqual(result[1]["pv_wh"], 2)
+        self.assertEqual(result[1]["load_wh"], 1)
+        self.assertEqual(result[1]["soc_min_percent"], 41)
+        self.assertEqual(result[1]["soc_max_percent"], 43)
+
+    def test_period_analytics_combines_days_and_months(self) -> None:
+        rows = [
+            {
+                "day": "2026-07-31",
+                "pv_wh": 5000,
+                "load_wh": 3000,
+                "grid_import_wh": 500,
+                "grid_export_wh": 1000,
+                "battery_charge_wh": 1200,
+                "battery_discharge_wh": 700,
+                "sample_count": 10,
+                "soc_start_percent": 40,
+                "soc_end_percent": 60,
+                "soc_min_percent": 38,
+                "soc_max_percent": 62,
+            },
+            {
+                "day": "2026-08-01",
+                "pv_wh": 7000,
+                "load_wh": 4000,
+                "grid_import_wh": 200,
+                "grid_export_wh": 2000,
+                "battery_charge_wh": 1800,
+                "battery_discharge_wh": 500,
+                "sample_count": 12,
+                "soc_start_percent": 60,
+                "soc_end_percent": 75,
+                "soc_min_percent": 55,
+                "soc_max_percent": 78,
+            },
+        ]
+
+        result = build_period_analytics(rows, group_by_month=True)
+
+        self.assertEqual([point["label"] for point in result["points"]], ["2026-07", "2026-08"])
+        self.assertEqual(result["stats"]["pv_kwh"], 12)
+        self.assertEqual(result["stats"]["self_consumption_kwh"], 9)
+        self.assertEqual(result["stats"]["soc_min_percent"], 38)
+        self.assertEqual(result["stats"]["soc_max_percent"], 78)
+
+    def test_daily_backfill_is_idempotent(self) -> None:
+        start = datetime(2026, 7, 31, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "felicity.db"
+            initialize_database(db_path)
+            for second in (0, 2, 4):
+                save_telemetry_snapshot(
+                    raw_data={},
+                    parsed_data=telemetry(3600, 1800, 0, 0, 50),
+                    source="test",
+                    db_path=db_path,
+                    timestamp=start + timedelta(seconds=second),
+                )
+
+            ensure_energy_daily(db_path)
+            first = get_energy_daily(db_path=db_path)
+            ensure_energy_daily(db_path)
+            second = get_energy_daily(db_path=db_path)
+
+        self.assertEqual(first, second)
+        self.assertEqual(first[0]["pv_wh"], 4)
+        self.assertEqual(first[0]["sample_count"], 3)
 
 
 if __name__ == "__main__":
