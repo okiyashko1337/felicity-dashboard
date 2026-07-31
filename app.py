@@ -25,6 +25,13 @@ from database import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+UI_VERSION = "0.5.1"
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "X-Felicity-UI-Version": UI_VERSION,
+}
 
 
 @asynccontextmanager
@@ -39,7 +46,7 @@ app = FastAPI(title="Felicity Energy Dashboard API", lifespan=lifespan)
 
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers=NO_CACHE_HEADERS)
 
 
 @app.get("/api/current")
