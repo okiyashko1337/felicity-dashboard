@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- Clear live-data freshness state without a countdown progress bar.
+- Frame number and exact source update timestamp.
+- Ticking local clock and date beside the data status.
+
 ## 0.4.0
 
 - Five interactive summary cards with one focused detail chart.

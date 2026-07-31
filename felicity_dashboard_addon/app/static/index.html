@@ -55,13 +55,31 @@
     .metric-value { font-variant-numeric: tabular-nums; }
     .chart-wrap { height: 310px; }
     .history-chart-wrap { height: 340px; }
+    .refresh-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 18px;
+      min-width: 310px;
+    }
+    .clock-block {
+      padding-left: 18px;
+      border-left: 1px solid var(--line);
+      text-align: right;
+    }
+    .fresh-frame .metric-value { animation: value-refresh 360ms ease-out; }
+    @keyframes value-refresh { 50% { color: #6ee7b7; } }
     button:disabled { cursor: not-allowed; opacity: .3; }
     @media (max-width: 640px) {
       .summary-card { min-height: 130px; }
       .chart-wrap { height: 260px; }
       .history-chart-wrap { height: 300px; }
+      .refresh-card { min-width: 0; width: 100%; }
     }
-    @media (prefers-reduced-motion: reduce) { .summary-card { transition: none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .summary-card { transition: none; }
+      .fresh-frame .metric-value { animation: none; }
+    }
   </style>
 </head>
 <body class="min-h-screen text-slate-100 antialiased">
@@ -72,11 +90,17 @@
         <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Энергия дома</h1>
         <p class="mt-2 text-sm text-slate-500">Живые данные инвертора и история, которая хранится локально.</p>
       </div>
-      <div class="panel flex items-center gap-3 rounded-2xl px-4 py-3">
-        <span id="status-dot" class="h-2.5 w-2.5 rounded-full bg-amber-300"></span>
+      <div class="panel refresh-card rounded-2xl px-4 py-3">
         <div>
-          <p id="status" class="text-sm font-medium text-slate-200">Подключение…</p>
-          <p id="timestamp" class="mt-0.5 text-xs text-slate-500">Ожидание первого снимка</p>
+          <p class="flex items-center gap-2 text-sm font-medium text-slate-200">
+            <span id="status-dot" class="h-2.5 w-2.5 rounded-full bg-amber-300"></span>
+            <span id="status">Подключение…</span>
+          </p>
+          <p id="frame-meta" class="mt-1 text-xs text-slate-500">Кадр — · ожидание первого снимка</p>
+        </div>
+        <div class="clock-block">
+          <time id="current-clock" class="metric-value block text-xl font-semibold text-white">--:--:--</time>
+          <time id="current-date" class="mt-0.5 block text-xs text-slate-500">—</time>
         </div>
       </div>
     </header>
@@ -177,7 +201,8 @@
       lastSystemId: null,
       analyticsRequest: 0,
       latest: null,
-      latestSystem: null
+      latestSystem: null,
+      connectionError: null
     };
 
     const apiUrl = (path) => new URL(path, window.location.href).toString();
@@ -328,6 +353,35 @@
       $("status-dot").className = `h-2.5 w-2.5 rounded-full ${ok ? "bg-emerald-400" : "bg-rose-400"}`;
     }
 
+    function updateFreshness() {
+      const now = new Date();
+      $("current-clock").textContent = now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      $("current-date").textContent = now.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+      const snapshot = state.latest;
+      if (!snapshot) {
+        setConnection(false, state.connectionError || "Ожидание данных");
+        return;
+      }
+      const updated = new Date(snapshot.timestamp);
+      const age = Math.max(0, (now.getTime() - updated.getTime()) / 1000);
+      $("frame-meta").textContent = `Кадр #${fmt(snapshot.id)} · обновлено ${updated.toLocaleString("ru-RU")}`;
+      if (state.connectionError) {
+        setConnection(false, state.connectionError);
+      } else if (age <= 5) {
+        setConnection(true, "Данные актуальны");
+      } else if (age <= 15) {
+        $("status").textContent = "Обновление задерживается";
+        $("status-dot").className = "h-2.5 w-2.5 rounded-full bg-amber-300";
+      } else {
+        setConnection(false, "Данные устарели");
+      }
+    }
+
+    function flashNewFrame() {
+      document.body.classList.remove("fresh-frame");
+      requestAnimationFrame(() => document.body.classList.add("fresh-frame"));
+    }
+
     function updateCards(snapshot) {
       state.latest = snapshot;
       const data = snapshot.parsed;
@@ -344,7 +398,8 @@
       const gridPower = number(data.grid_power_w?.total) || 0;
       const gridMode = gridPower > 0 ? `импорт ${fmt(gridPower)} Вт` : gridPower < 0 ? `экспорт ${fmt(Math.abs(gridPower))} Вт` : "обмен 0 Вт";
       $("grid-detail").textContent = `${gridMode} · ${fmt(data.grid_frequency_hz, 2)} Гц`;
-      $("timestamp").textContent = `Обновлено ${new Date(snapshot.timestamp).toLocaleString("ru-RU")}`;
+      flashNewFrame();
+      updateFreshness();
       updateDetailValue();
     }
 
@@ -507,15 +562,16 @@
         const response = await fetch(apiUrl("api/current"), { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const snapshot = await response.json();
+        state.connectionError = null;
         if (snapshot.id !== state.lastId) {
           state.lastId = snapshot.id;
           updateCards(snapshot);
           pushTelemetry(snapshot);
         }
-        const age = (Date.now() - new Date(snapshot.timestamp).getTime()) / 1000;
-        setConnection(age <= 10, age <= 10 ? "Инвертор подключён" : "Данные устарели");
+        updateFreshness();
       } catch (error) {
-        setConnection(false, error.message === "HTTP 404" ? "Ожидание данных" : "Нет связи с API");
+        state.connectionError = error.message === "HTTP 404" ? "Ожидание данных" : "Нет связи с API";
+        updateFreshness();
       }
     }
 
@@ -557,10 +613,12 @@
 
     async function start() {
       updatePeriodControls();
+      updateFreshness();
       drawDetail(true);
       await Promise.allSettled([loadTelemetryHistory(), loadSystemHistory(), loadHistoryAnalytics()]);
       await Promise.allSettled([refreshCurrent(), refreshSystem()]);
       setInterval(refreshCurrent, 2000);
+      setInterval(updateFreshness, 1000);
       setInterval(refreshSystem, 60000);
       setInterval(() => { if (state.period === "day" && localDate(state.anchor) === localDate()) loadHistoryAnalytics(); }, 60000);
     }
