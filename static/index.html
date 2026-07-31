@@ -52,6 +52,15 @@
       background: var(--accent);
       content: "";
     }
+    .secondary-card {
+      min-height: 142px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .detail-scale button[aria-pressed="true"] {
+      background: rgba(255, 255, 255, .1);
+      color: #fff;
+    }
     .metric-value { font-variant-numeric: tabular-nums; }
     .chart-wrap { height: 310px; }
     .history-chart-wrap { height: 340px; }
@@ -86,7 +95,7 @@
   <main class="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-9">
     <header class="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p class="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">Felicity IVGM · UI 0.5.1</p>
+        <p class="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">Felicity IVGM · UI 0.6.0</p>
         <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Энергия дома</h1>
         <p class="mt-2 text-sm text-slate-500">Живые данные инвертора и история, которая хранится локально.</p>
       </div>
@@ -134,13 +143,19 @@
     </section>
 
     <section id="detail-panel" class="panel mt-3 rounded-3xl p-5 sm:p-6" aria-live="polite">
-      <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div class="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
           <p id="detail-kicker" class="text-xs font-semibold uppercase tracking-[.2em] text-amber-300">Подробный график</p>
           <h2 id="detail-title" class="mt-1 text-xl font-semibold text-white">Солнечная генерация</h2>
           <p id="detail-subtitle" class="mt-1 text-xs text-slate-500">PV1, PV2 и напряжение MPPT · последние минуты</p>
         </div>
-        <div class="sm:text-right">
+        <div id="detail-scale" class="detail-scale flex flex-wrap rounded-xl border border-white/10 bg-black/10 p-1" role="group" aria-label="Масштаб подробного графика">
+          <button class="rounded-lg px-3 py-2 text-sm text-slate-500" data-detail-scale="15m" aria-pressed="false">15 мин</button>
+          <button class="rounded-lg px-3 py-2 text-sm text-slate-500" data-detail-scale="1h" aria-pressed="false">1 ч</button>
+          <button class="rounded-lg px-3 py-2 text-sm text-white" data-detail-scale="6h" aria-pressed="true">6 ч</button>
+          <button class="rounded-lg px-3 py-2 text-sm text-slate-500" data-detail-scale="day" aria-pressed="false">Текущий день</button>
+        </div>
+        <div class="xl:text-right">
           <p id="detail-value" class="metric-value text-2xl font-semibold text-white">—</p>
           <p id="detail-value-label" class="mt-1 text-xs text-slate-500">текущая мощность</p>
         </div>
@@ -185,14 +200,51 @@
         <div class="history-chart-wrap"><canvas id="history-chart" aria-label="График сохранённой истории"></canvas></div>
       </div>
     </section>
+
+    <section class="mt-5" aria-labelledby="secondary-title">
+      <div class="mb-4">
+        <p class="text-xs font-semibold uppercase tracking-[.2em] text-slate-500">Диагностика</p>
+        <h2 id="secondary-title" class="mt-1 text-xl font-semibold text-white">Второстепенные параметры</h2>
+        <p class="mt-1 text-xs text-slate-500">BMS, температуры, DC-шина и резервный выход из последнего кадра.</p>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <article class="secondary-card rounded-3xl p-5">
+          <p class="min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">BMS-модуль 1</p>
+          <p class="mt-3"><strong id="bms1-soc" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">% SOC</small></p>
+          <p id="bms1-detail" class="mt-3 text-xs leading-5 text-slate-500">Ожидание данных BMS</p>
+        </article>
+        <article class="secondary-card rounded-3xl p-5">
+          <p class="min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">BMS-модуль 2</p>
+          <p class="mt-3"><strong id="bms2-soc" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">% SOC</small></p>
+          <p id="bms2-detail" class="mt-3 text-xs leading-5 text-slate-500">Ожидание данных BMS</p>
+        </article>
+        <article class="secondary-card rounded-3xl p-5">
+          <p class="min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Температуры</p>
+          <p class="mt-3"><strong id="temperature-main" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">°C инвертор</small></p>
+          <p id="temperature-detail" class="mt-3 text-xs leading-5 text-slate-500">DC — · трансформатор —</p>
+        </article>
+        <article class="secondary-card rounded-3xl p-5">
+          <p class="min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">DC и MPPT</p>
+          <p class="mt-3"><strong id="dc-bus" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">В DC-шина</small></p>
+          <p id="mppt-detail" class="mt-3 text-xs leading-5 text-slate-500">MPPT1 — · MPPT2 —</p>
+        </article>
+        <article class="secondary-card rounded-3xl p-5 sm:col-span-2 xl:col-span-1">
+          <p class="min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Резерв и состояние</p>
+          <p class="mt-3"><strong id="backup-power" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">Вт backup</small></p>
+          <p id="backup-detail" class="mt-3 text-xs leading-5 text-slate-500">Режим — · состояние —</p>
+        </article>
+      </div>
+    </section>
   </main>
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const MAX_POINTS = 180;
-    const SYSTEM_MAX_POINTS = 360;
+    const DETAIL_MAX_POINTS = 900;
     const state = {
       panel: "solar",
+      detailScale: "6h",
+      detailRequest: 0,
+      detailDay: null,
       period: "day",
       anchor: new Date(),
       telemetry: [],
@@ -216,6 +268,41 @@
     };
     const timeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const shortTimeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    const DETAIL_SCALES = {
+      "15m": { durationMs: 15 * 60 * 1000, label: "последние 15 минут" },
+      "1h": { durationMs: 60 * 60 * 1000, label: "последний час" },
+      "6h": { durationMs: 6 * 60 * 60 * 1000, label: "последние 6 часов" },
+      day: { durationMs: null, label: "сегодня · 00:00–23:59" }
+    };
+    const detailRange = () => {
+      const now = new Date();
+      const scale = DETAIL_SCALES[state.detailScale];
+      if (state.detailScale === "day") {
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+        return { start, end, axisMin: start.getTime(), axisMax: end.getTime() - 1 };
+      }
+      const end = now;
+      const start = new Date(end.getTime() - scale.durationMs);
+      return { start, end, axisMin: start.getTime(), axisMax: end.getTime() };
+    };
+    const detailXAxis = () => {
+      const range = detailRange();
+      return {
+        type: "linear",
+        min: range.axisMin,
+        max: range.axisMax,
+        grid: { display: false },
+        ticks: {
+          maxTicksLimit: state.detailScale === "day" ? 7 : 8,
+          callback: (value) => new Date(value).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+        }
+      };
+    };
+    const detailSeries = (rows, value) => rows.map((row) => ({
+      x: new Date(row.timestamp).getTime(),
+      y: number(value(row))
+    }));
     const line = (label, color, axis = "y", fill = false) => ({
       label, data: [], yAxisID: axis, borderColor: color,
       backgroundColor: fill ? `${color}18` : color, borderWidth: 2,
@@ -238,78 +325,77 @@
     let historyChart = new Chart($("history-chart"), { type: "bar", data: { labels: [], datasets: [] }, options: baseOptions() });
 
     const panelMeta = {
-      solar: { title: "Солнечная генерация", subtitle: "PV1, PV2 и напряжение MPPT · последние минуты", color: "text-amber-300", valueLabel: "текущая мощность" },
-      home: { title: "Потребление дома", subtitle: "Общая нагрузка и три фазы · последние минуты", color: "text-sky-300", valueLabel: "потребляет дом" },
-      battery: { title: "Аккумулятор", subtitle: "SOC, мощность и напряжение · последние минуты", color: "text-emerald-300", valueLabel: "текущий заряд" },
-      grid: { title: "Напряжение сети", subtitle: "Три фазы и импорт/экспорт · последние минуты", color: "text-violet-300", valueLabel: "среднее напряжение" },
-      system: { title: "Загрузка системы", subtitle: "CPU, память, диск и температура · обновление раз в минуту", color: "text-rose-300", valueLabel: "текущая загрузка CPU" }
+      solar: { title: "Солнечная генерация", subtitle: "PV1, PV2 и напряжение MPPT", color: "text-amber-300", valueLabel: "текущая мощность" },
+      home: { title: "Потребление дома", subtitle: "Общая нагрузка и три фазы", color: "text-sky-300", valueLabel: "потребляет дом" },
+      battery: { title: "Аккумулятор", subtitle: "SOC, мощность и напряжение", color: "text-emerald-300", valueLabel: "текущий заряд" },
+      grid: { title: "Напряжение сети", subtitle: "Три фазы и импорт/экспорт", color: "text-violet-300", valueLabel: "среднее напряжение" },
+      system: { title: "Загрузка системы", subtitle: "CPU, память, диск и температура", color: "text-rose-300", valueLabel: "текущая загрузка CPU" }
     };
 
     function detailSpec() {
       if (state.panel === "system") {
         return {
           rows: state.system,
-          labels: state.system.map((row) => timeLabel(row.timestamp)),
+          labels: [],
           datasets: [
-            { ...line("CPU, %", "#fb7185", "percent", true), data: state.system.map((row) => number(row.data.cpu_percent)) },
-            { ...line("Память, %", "#a78bfa", "percent"), data: state.system.map((row) => number(row.data.memory?.percent)) },
-            { ...line("Диск, %", "#fbbf24", "percent"), data: state.system.map((row) => number(row.data.disk?.percent)) },
-            { ...line("Температура, °C", "#38bdf8", "temperature"), data: state.system.map((row) => number(row.data.cpu_temperature_c)) }
+            { ...line("CPU, %", "#fb7185", "percent", true), parsing: false, data: detailSeries(state.system, (row) => row.data.cpu_percent) },
+            { ...line("Память, %", "#a78bfa", "percent"), parsing: false, data: detailSeries(state.system, (row) => row.data.memory?.percent) },
+            { ...line("Диск, %", "#fbbf24", "percent"), parsing: false, data: detailSeries(state.system, (row) => row.data.disk?.percent) },
+            { ...line("Температура, °C", "#38bdf8", "temperature"), parsing: false, data: detailSeries(state.system, (row) => row.data.cpu_temperature_c) }
           ],
           scales: {
-            x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+            x: detailXAxis(),
             percent: { position: "left", min: 0, max: 100, ticks: { maxTicksLimit: 6 } },
             temperature: { position: "right", suggestedMin: 20, suggestedMax: 90, grid: { display: false }, ticks: { maxTicksLimit: 6 } }
           }
         };
       }
       const rows = state.telemetry;
-      const labels = rows.map((row) => timeLabel(row.timestamp));
       if (state.panel === "solar") return {
-        labels, datasets: [
-          { ...line("PV1, Вт", "#fbbf24", "power", true), data: rows.map((row) => number(row.parsed.pv_power_w?.pv1)) },
-          { ...line("PV2, Вт", "#fb923c", "power"), data: rows.map((row) => number(row.parsed.pv_power_w?.pv2)) },
-          { ...line("MPPT1, В", "#38bdf8", "voltage"), data: rows.map((row) => number(row.parsed.pv_voltage_v?.mppt1)) },
-          { ...line("MPPT2, В", "#a78bfa", "voltage"), data: rows.map((row) => number(row.parsed.pv_voltage_v?.mppt2)) }
-        ], scales: dualScales("power", "Вт", "voltage", "В")
+        labels: [], datasets: [
+          { ...line("PV1, Вт", "#fbbf24", "power", true), parsing: false, data: detailSeries(rows, (row) => row.parsed.pv_power_w?.pv1) },
+          { ...line("PV2, Вт", "#fb923c", "power"), parsing: false, data: detailSeries(rows, (row) => row.parsed.pv_power_w?.pv2) },
+          { ...line("MPPT1, В", "#38bdf8", "voltage"), parsing: false, data: detailSeries(rows, (row) => row.parsed.pv_voltage_v?.mppt1) },
+          { ...line("MPPT2, В", "#a78bfa", "voltage"), parsing: false, data: detailSeries(rows, (row) => row.parsed.pv_voltage_v?.mppt2) }
+        ], scales: dualScales("power", "Вт", "voltage", "В", detailXAxis())
       };
       if (state.panel === "home") return {
-        labels, datasets: [
-          { ...line("Всего, Вт", "#38bdf8", "power", true), data: rows.map((row) => number(row.parsed.load_power_w?.total)) },
-          { ...line("L1, Вт", "#34d399", "power"), data: rows.map((row) => number(row.parsed.load_power_w?.l1)) },
-          { ...line("L2, Вт", "#a78bfa", "power"), data: rows.map((row) => number(row.parsed.load_power_w?.l2)) },
-          { ...line("L3, Вт", "#fb7185", "power"), data: rows.map((row) => number(row.parsed.load_power_w?.l3)) }
-        ], scales: singleScale("power", "Вт")
+        labels: [], datasets: [
+          { ...line("Всего, Вт", "#38bdf8", "power", true), parsing: false, data: detailSeries(rows, (row) => row.parsed.load_power_w?.total) },
+          { ...line("L1, Вт", "#34d399", "power"), parsing: false, data: detailSeries(rows, (row) => row.parsed.load_power_w?.l1) },
+          { ...line("L2, Вт", "#a78bfa", "power"), parsing: false, data: detailSeries(rows, (row) => row.parsed.load_power_w?.l2) },
+          { ...line("L3, Вт", "#fb7185", "power"), parsing: false, data: detailSeries(rows, (row) => row.parsed.load_power_w?.l3) }
+        ], scales: singleScale("power", "Вт", detailXAxis())
       };
       if (state.panel === "battery") return {
-        labels, datasets: [
-          { ...line("SOC, %", "#facc15", "soc", true), data: rows.map((row) => number(row.parsed.soc_percent)) },
-          { ...line("Мощность, кВт", "#34d399", "power"), data: rows.map((row) => number(row.parsed.battery_power_w) / 1000) },
-          { ...line("Напряжение, В", "#a78bfa", "voltage"), data: rows.map((row) => number(row.parsed.battery_voltage_v)) }
+        labels: [], datasets: [
+          { ...line("SOC, %", "#facc15", "soc", true), parsing: false, data: detailSeries(rows, (row) => row.parsed.soc_percent) },
+          { ...line("Мощность, кВт", "#34d399", "power"), parsing: false, data: detailSeries(rows, (row) => number(row.parsed.battery_power_w) / 1000) },
+          { ...line("Напряжение, В", "#a78bfa", "voltage"), parsing: false, data: detailSeries(rows, (row) => row.parsed.battery_voltage_v) }
         ],
         scales: {
-          x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+          x: detailXAxis(),
           soc: { position: "left", min: 0, max: 100, ticks: { maxTicksLimit: 6 }, title: { display: true, text: "%" } },
           power: { position: "right", grid: { display: false }, ticks: { maxTicksLimit: 6 }, title: { display: true, text: "кВт" } },
           voltage: { display: false, suggestedMin: 45, suggestedMax: 60 }
         }
       };
       return {
-        labels, datasets: [
-          { ...line("L1, В", "#a78bfa", "voltage", true), data: rows.map((row) => number(row.parsed.grid_voltage_v?.l1)) },
-          { ...line("L2, В", "#34d399", "voltage"), data: rows.map((row) => number(row.parsed.grid_voltage_v?.l2)) },
-          { ...line("L3, В", "#fb7185", "voltage"), data: rows.map((row) => number(row.parsed.grid_voltage_v?.l3)) },
-          { ...line("Сеть, кВт", "#38bdf8", "power"), data: rows.map((row) => number(row.parsed.grid_power_w?.total) / 1000) }
-        ], scales: dualScales("voltage", "В", "power", "кВт")
+        labels: [], datasets: [
+          { ...line("L1, В", "#a78bfa", "voltage", true), parsing: false, data: detailSeries(rows, (row) => row.parsed.grid_voltage_v?.l1) },
+          { ...line("L2, В", "#34d399", "voltage"), parsing: false, data: detailSeries(rows, (row) => row.parsed.grid_voltage_v?.l2) },
+          { ...line("L3, В", "#fb7185", "voltage"), parsing: false, data: detailSeries(rows, (row) => row.parsed.grid_voltage_v?.l3) },
+          { ...line("Сеть, кВт", "#38bdf8", "power"), parsing: false, data: detailSeries(rows, (row) => number(row.parsed.grid_power_w?.total) / 1000) }
+        ], scales: dualScales("voltage", "В", "power", "кВт", detailXAxis())
       };
     }
 
-    function singleScale(id, title) {
-      return { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, [id]: { position: "left", ticks: { maxTicksLimit: 6 }, title: { display: true, text: title } } };
+    function singleScale(id, title, x = { grid: { display: false }, ticks: { maxTicksLimit: 8 } }) {
+      return { x, [id]: { position: "left", ticks: { maxTicksLimit: 6 }, title: { display: true, text: title } } };
     }
-    function dualScales(leftId, leftTitle, rightId, rightTitle) {
+    function dualScales(leftId, leftTitle, rightId, rightTitle, x = { grid: { display: false }, ticks: { maxTicksLimit: 8 } }) {
       return {
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+        x,
         [leftId]: { position: "left", ticks: { maxTicksLimit: 6 }, title: { display: true, text: leftTitle } },
         [rightId]: { position: "right", grid: { display: false }, ticks: { maxTicksLimit: 6 }, title: { display: true, text: rightTitle } }
       };
@@ -318,7 +404,7 @@
     function drawDetail(recreate = false) {
       const meta = panelMeta[state.panel];
       $("detail-title").textContent = meta.title;
-      $("detail-subtitle").textContent = meta.subtitle;
+      $("detail-subtitle").textContent = `${meta.subtitle} · ${DETAIL_SCALES[state.detailScale].label}`;
       $("detail-value-label").textContent = meta.valueLabel;
       $("detail-kicker").className = `text-xs font-semibold uppercase tracking-[.2em] ${meta.color}`;
       const spec = detailSpec();
@@ -326,10 +412,16 @@
       if (!detailChart) {
         const options = baseOptions();
         options.scales = spec.scales;
+        options.plugins.tooltip = {
+          callbacks: {
+            title: (items) => items.length ? new Date(items[0].parsed.x).toLocaleString("ru-RU") : ""
+          }
+        };
         detailChart = new Chart($("detail-chart"), { type: "line", data: { labels: spec.labels, datasets: spec.datasets }, options });
       } else {
         detailChart.data.labels = spec.labels;
         detailChart.data.datasets = spec.datasets;
+        detailChart.options.scales = spec.scales;
         detailChart.update("none");
       }
       updateDetailValue();
@@ -375,11 +467,37 @@
       } else {
         setConnection(false, "Данные устарели");
       }
+      if (state.detailScale === "day" && state.detailDay !== localDate(now)) loadDetailRange();
     }
 
     function flashNewFrame() {
       document.body.classList.remove("fresh-frame");
       requestAnimationFrame(() => document.body.classList.add("fresh-frame"));
+    }
+
+    function updateBmsCard(prefix, battery) {
+      if (!battery) {
+        $(`${prefix}-soc`).textContent = "—";
+        $(`${prefix}-detail`).textContent = "Модуль BMS не найден";
+        return;
+      }
+      $(`${prefix}-soc`).textContent = fmt(battery.soc_percent, 0);
+      const stateLabel = battery.fault ? `ошибка ${battery.fault}` : battery.warning ? `предупреждение ${battery.warning}` : "норма";
+      $(`${prefix}-detail`).textContent = `${fmt(battery.voltage_v, 1)} В · ${fmt(battery.current_a, 1)} А · Δ ${fmt(battery.cell_delta_mv, 0)} мВ · ${fmt(battery.temperature_c?.min, 1)}–${fmt(battery.temperature_c?.max, 1)} °C · SOH ${fmt(battery.soh_percent, 0)}% · ${stateLabel}`;
+    }
+
+    function updateSecondaryCards(data) {
+      const batteries = data.batteries || [];
+      updateBmsCard("bms1", batteries[0]);
+      updateBmsCard("bms2", batteries[1]);
+      $("temperature-main").textContent = fmt(data.temperature_c?.inverter, 1);
+      $("temperature-detail").textContent = `DC ${fmt(data.temperature_c?.dc, 1)} °C · трансформатор ${fmt(data.temperature_c?.transformer, 1)} °C`;
+      $("dc-bus").textContent = fmt(data.dc_bus_voltage_v?.total, 1);
+      $("mppt-detail").textContent = `MPPT1 ${fmt(data.pv_voltage_v?.mppt1, 1)} В / ${fmt(data.pv_current_a?.mppt1, 1)} А · MPPT2 ${fmt(data.pv_voltage_v?.mppt2, 1)} В / ${fmt(data.pv_current_a?.mppt2, 1)} А`;
+      $("backup-power").textContent = fmt(data.backup_power_w?.total);
+      const backup = data.backup_voltage_v;
+      const backupAverage = backup ? (number(backup.l1) + number(backup.l2) + number(backup.l3)) / 3 : null;
+      $("backup-detail").textContent = `Режим ${data.device?.work_mode ?? "—"} · ${data.healthy ? "норма" : "есть предупреждение"} · ${fmt(backupAverage, 1)} В`;
     }
 
     function updateCards(snapshot) {
@@ -398,6 +516,7 @@
       const gridPower = number(data.grid_power_w?.total) || 0;
       const gridMode = gridPower > 0 ? `импорт ${fmt(gridPower)} Вт` : gridPower < 0 ? `экспорт ${fmt(Math.abs(gridPower))} Вт` : "обмен 0 Вт";
       $("grid-detail").textContent = `${gridMode} · ${fmt(data.grid_frequency_hz, 2)} Гц`;
+      updateSecondaryCards(data);
       flashNewFrame();
       updateFreshness();
       updateDetailValue();
@@ -414,20 +533,32 @@
     function selectPanel(panel) {
       state.panel = panel;
       document.querySelectorAll(".summary-card").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.panel === panel)));
-      drawDetail(true);
+      loadDetailRange();
+    }
+
+    function appendLiveSample(rows, snapshot) {
+      const range = detailRange();
+      const timestamp = new Date(snapshot.timestamp).getTime();
+      if (timestamp < range.axisMin || timestamp > range.axisMax) return;
+      const minimumStep = (range.axisMax - range.axisMin) / DETAIL_MAX_POINTS;
+      const last = rows[rows.length - 1];
+      if (last && timestamp - new Date(last.timestamp).getTime() < minimumStep) {
+        rows[rows.length - 1] = snapshot;
+      } else {
+        rows.push(snapshot);
+      }
+      while (rows.length > DETAIL_MAX_POINTS + 1) rows.shift();
     }
 
     function pushTelemetry(snapshot) {
       if (state.telemetry.some((row) => row.id === snapshot.id)) return;
-      state.telemetry.push(snapshot);
-      if (state.telemetry.length > MAX_POINTS) state.telemetry.shift();
+      appendLiveSample(state.telemetry, snapshot);
       if (state.panel !== "system") drawDetail();
     }
 
     function pushSystem(snapshot) {
       if (state.system.some((row) => row.id === snapshot.id)) return;
-      state.system.push(snapshot);
-      if (state.system.length > SYSTEM_MAX_POINTS) state.system.shift();
+      appendLiveSample(state.system, snapshot);
       if (state.panel === "system") drawDetail();
     }
 
@@ -545,16 +676,34 @@
       }
     }
 
-    async function loadTelemetryHistory() {
-      const response = await fetch(apiUrl(`api/history?limit=${MAX_POINTS}`), { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      state.telemetry = await response.json();
-      if (state.telemetry.length) {
-        const latest = state.telemetry[state.telemetry.length - 1];
-        state.lastId = latest.id;
-        updateCards(latest);
-      }
+    async function loadDetailRange() {
+      const requestId = ++state.detailRequest;
+      const range = detailRange();
+      state.detailDay = localDate();
       drawDetail(true);
+      try {
+        const query = new URLSearchParams({
+          start: range.start.toISOString(),
+          end: range.end.toISOString(),
+          max_points: String(DETAIL_MAX_POINTS)
+        });
+        const endpoint = state.panel === "system" ? "api/system/range" : "api/detail/history";
+        const response = await fetch(apiUrl(`${endpoint}?${query}`), { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const rows = await response.json();
+        if (requestId !== state.detailRequest) return;
+        if (state.panel === "system") {
+          state.system = rows;
+          if (rows.length && !state.latestSystem) updateSystem(rows[rows.length - 1]);
+        } else {
+          state.telemetry = rows;
+          if (rows.length && !state.latest) updateCards(rows[rows.length - 1]);
+        }
+        drawDetail(true);
+      } catch (error) {
+        if (requestId !== state.detailRequest) return;
+        $("detail-subtitle").textContent = `${panelMeta[state.panel].subtitle} · не удалось загрузить выбранный период`;
+      }
     }
 
     async function refreshCurrent() {
@@ -575,17 +724,6 @@
       }
     }
 
-    async function loadSystemHistory() {
-      const response = await fetch(apiUrl(`api/system/history?limit=${SYSTEM_MAX_POINTS}`), { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      state.system = await response.json();
-      if (state.system.length) {
-        const latest = state.system[state.system.length - 1];
-        state.lastSystemId = latest.id;
-        updateSystem(latest);
-      }
-    }
-
     async function refreshSystem() {
       try {
         const response = await fetch(apiUrl("api/system/current"), { cache: "no-store" });
@@ -602,6 +740,15 @@
     }
 
     document.querySelectorAll(".summary-card").forEach((button) => button.addEventListener("click", () => selectPanel(button.dataset.panel)));
+    document.querySelectorAll("[data-detail-scale]").forEach((button) => button.addEventListener("click", () => {
+      state.detailScale = button.dataset.detailScale;
+      document.querySelectorAll("[data-detail-scale]").forEach((item) => {
+        const active = item === button;
+        item.setAttribute("aria-pressed", String(active));
+        item.className = `rounded-lg px-3 py-2 text-sm ${active ? "text-white" : "text-slate-500"}`;
+      });
+      loadDetailRange();
+    }));
     document.querySelectorAll(".period-button").forEach((button) => button.addEventListener("click", () => {
       state.period = button.dataset.period;
       updatePeriodControls();
@@ -615,7 +762,7 @@
       updatePeriodControls();
       updateFreshness();
       drawDetail(true);
-      await Promise.allSettled([loadTelemetryHistory(), loadSystemHistory(), loadHistoryAnalytics()]);
+      await Promise.allSettled([loadDetailRange(), loadHistoryAnalytics()]);
       await Promise.allSettled([refreshCurrent(), refreshSystem()]);
       setInterval(refreshCurrent, 2000);
       setInterval(updateFreshness, 1000);

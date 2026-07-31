@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -299,6 +300,49 @@ def get_telemetry_range(
     ]
 
 
+def get_telemetry_range_sampled(
+    start: datetime,
+    end: datetime,
+    max_points: int,
+    db_path: Path = DB_PATH,
+) -> list[dict]:
+    """Return an evenly sampled telemetry range without loading every row."""
+    start_utc = start.astimezone(timezone.utc).isoformat()
+    end_utc = end.astimezone(timezone.utc).isoformat()
+    with connect(db_path) as connection:
+        total = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM telemetry_snapshots
+                WHERE timestamp >= ? AND timestamp < ?
+                """,
+                (start_utc, end_utc),
+            ).fetchone()[0]
+        )
+        if total == 0:
+            return []
+        stride = max(1, math.ceil((total - 1) / max(1, max_points - 1)))
+        rows = connection.execute(
+            """
+            WITH ranked AS (
+                SELECT
+                    id, timestamp, source, raw_data_json, parsed_data_json,
+                    ROW_NUMBER() OVER (ORDER BY timestamp ASC, id ASC) AS row_number,
+                    COUNT(*) OVER () AS total_count
+                FROM telemetry_snapshots
+                WHERE timestamp >= ? AND timestamp < ?
+            )
+            SELECT id, timestamp, source, raw_data_json, parsed_data_json
+            FROM ranked
+            WHERE (row_number - 1) % ? = 0 OR row_number = total_count
+            ORDER BY timestamp ASC, id ASC
+            """,
+            (start_utc, end_utc, stride),
+        ).fetchall()
+    return [serialize_telemetry_row(row) for row in rows]
+
+
 def save_system_snapshot(
     data: dict,
     db_path: Path = DB_PATH,
@@ -349,6 +393,49 @@ def get_system_history(limit: int, db_path: Path = DB_PATH) -> list[dict]:
             (limit,),
         ).fetchall()
     return [_serialize_system_row(row) for row in reversed(rows)]
+
+
+def get_system_range(
+    start: datetime,
+    end: datetime,
+    max_points: int,
+    db_path: Path = DB_PATH,
+) -> list[dict]:
+    """Return evenly sampled Raspberry Pi metrics for a time range."""
+    start_utc = start.astimezone(timezone.utc).isoformat()
+    end_utc = end.astimezone(timezone.utc).isoformat()
+    with connect(db_path) as connection:
+        total = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM system_snapshots
+                WHERE timestamp >= ? AND timestamp < ?
+                """,
+                (start_utc, end_utc),
+            ).fetchone()[0]
+        )
+        if total == 0:
+            return []
+        stride = max(1, math.ceil((total - 1) / max(1, max_points - 1)))
+        rows = connection.execute(
+            """
+            WITH ranked AS (
+                SELECT
+                    id, timestamp, data_json,
+                    ROW_NUMBER() OVER (ORDER BY timestamp ASC, id ASC) AS row_number,
+                    COUNT(*) OVER () AS total_count
+                FROM system_snapshots
+                WHERE timestamp >= ? AND timestamp < ?
+            )
+            SELECT id, timestamp, data_json
+            FROM ranked
+            WHERE (row_number - 1) % ? = 0 OR row_number = total_count
+            ORDER BY timestamp ASC, id ASC
+            """,
+            (start_utc, end_utc, stride),
+        ).fetchall()
+    return [_serialize_system_row(row) for row in rows]
 
 
 def save_snapshot(
