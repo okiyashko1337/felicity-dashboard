@@ -1,5 +1,5 @@
 name: Felicity Energy Dashboard
-version: "0.3.0"
+version: "0.5.0"
 slug: felicity_energy_dashboard
 description: Local Felicity IVGM monitoring with history and Raspberry Pi metrics
 url: https://github.com/okiyashko1337/felicity-dashboard
