@@ -127,6 +127,35 @@ def get_telemetry_history(
     return [serialize_telemetry_row(row) for row in reversed(rows)]
 
 
+def get_telemetry_range(
+    start: datetime,
+    end: datetime,
+    db_path: Path = DB_PATH,
+) -> list[dict]:
+    """Return parsed telemetry in a half-open UTC time range."""
+    start_utc = start.astimezone(timezone.utc).isoformat()
+    end_utc = end.astimezone(timezone.utc).isoformat()
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, timestamp, source, parsed_data_json
+            FROM telemetry_snapshots
+            WHERE timestamp >= ? AND timestamp < ?
+            ORDER BY timestamp ASC, id ASC
+            """,
+            (start_utc, end_utc),
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "timestamp": row["timestamp"],
+            "source": row["source"],
+            "parsed": json.loads(row["parsed_data_json"]),
+        }
+        for row in rows
+    ]
+
+
 def save_system_snapshot(
     data: dict,
     db_path: Path = DB_PATH,
