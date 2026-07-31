@@ -32,6 +32,11 @@ Felicity Wi-Fi module (TCP 53970)
 доступны пофазные токи, частота, DC-шина, мощность резервного выхода и полный
 сырой пакет устройства в поле `raw`.
 
+Отдельный системный монитор раз в минуту сохраняет загрузку CPU, load average,
+память, температуру, диск, uptime Raspberry Pi и полный физический размер
+SQLite вместе с WAL-файлом. API: `/api/system/current` и
+`/api/system/history`.
+
 ## Первый запуск на Mac
 
 В каталоге проекта:
@@ -53,7 +58,13 @@ python3 -m venv .venv
 FELICITY_HOST=192.168.1.135 .venv/bin/python collector.py
 ```
 
-Второй терминал:
+Второй терминал (на Mac часть Linux-метрик может быть недоступна):
+
+```bash
+.venv/bin/python system_monitor.py
+```
+
+Третий терминал:
 
 ```bash
 .venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
@@ -108,9 +119,25 @@ sudo systemctl enable --now felicity-collector felicity-web
 ```
 
 Важно: эти unit-файлы предназначены для Raspberry Pi OS и другого обычного
-Linux. На **Home Assistant OS** нет обычной установки systemd/venv; проект
-нужно упаковать как локальный Home Assistant add-on. Это следующий отдельный
-этап.
+Linux. На **Home Assistant OS** используйте приложение из следующего раздела.
+
+## Home Assistant OS
+
+Репозиторий содержит готовое приложение в каталоге
+`felicity_dashboard_addon`. Оно использует Home Assistant Ingress, поэтому
+панель защищена вашей учётной записью Home Assistant, а прямой HTTP-порт по
+умолчанию отключён. База хранится в постоянном `/data` и включается в резервную
+копию приложения.
+
+Для установки тестовой ветки добавьте в магазине приложений репозиторий:
+
+```text
+https://github.com/okiyashko1337/felicity-dashboard#agent/live-wifi-dashboard
+```
+
+Обновите список, установите **Felicity Energy Dashboard**, проверьте IP
+`192.168.1.135` на вкладке конфигурации и запустите приложение. Затем включите
+**Show in sidebar** и откройте **Felicity Energy**.
 
 ## Старый Modbus-вариант
 
