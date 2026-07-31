@@ -1,21 +1,26 @@
 """FastAPI server for live and simulated Felicity telemetry."""
 
+from __future__ import annotations
+
 import sqlite3
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from config import DB_PATH
-from analytics import build_energy_analytics
+from analytics import build_energy_analytics, build_period_analytics
 from database import (
     get_latest_telemetry,
     get_latest_system_snapshot,
     get_system_history,
     get_telemetry_history,
     get_telemetry_range,
+    get_energy_daily,
+    ensure_energy_daily,
     initialize_database,
 )
 
@@ -25,6 +30,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     initialize_database(DB_PATH)
+    ensure_energy_daily(DB_PATH)
     yield
 
 
@@ -78,6 +84,39 @@ def analytics(
     return {
         "start": start.isoformat(),
         "end": end.isoformat(),
+        **result,
+    }
+
+
+@app.get("/api/analytics/period")
+def analytics_period(
+    period: Literal["week", "month", "all"],
+    anchor: Optional[date] = None,
+) -> dict:
+    anchor = anchor or date.today()
+    if period == "week":
+        start = anchor - timedelta(days=anchor.weekday())
+        end = start + timedelta(days=7)
+    elif period == "month":
+        start = anchor.replace(day=1)
+        end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    else:
+        start = end = None
+
+    try:
+        rows = get_energy_daily(
+            start.isoformat() if start else None,
+            end.isoformat() if end else None,
+            DB_PATH,
+        )
+        result = build_period_analytics(rows, group_by_month=period == "all")
+    except sqlite3.Error as error:
+        raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
+    return {
+        "period": period,
+        "anchor": anchor.isoformat(),
+        "start": start.isoformat() if start else (rows[0]["day"] if rows else None),
+        "end": end.isoformat() if end else (rows[-1]["day"] if rows else None),
         **result,
     }
 
