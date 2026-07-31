@@ -1,15 +1,16 @@
 [Unit]
-Description=Felicity Modbus collector
-After=local-fs.target
+Description=Felicity local Wi-Fi telemetry collector
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
 User=pi
 WorkingDirectory=/opt/felicity-dashboard
+EnvironmentFile=-/opt/felicity-dashboard/felicity.env
 ExecStart=/opt/felicity-dashboard/.venv/bin/python collector.py
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
-

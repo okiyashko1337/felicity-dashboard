@@ -3,72 +3,488 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Felicity — Modbus Monitor</title>
+  <meta name="theme-color" content="#07110f">
+  <title>Felicity Energy — Живая панель</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --panel: rgba(15, 28, 25, 0.78);
+      --line: rgba(148, 163, 184, 0.13);
+    }
+    body {
+      background:
+        radial-gradient(circle at 15% -10%, rgba(16, 185, 129, 0.18), transparent 34rem),
+        radial-gradient(circle at 95% 5%, rgba(245, 158, 11, 0.1), transparent 28rem),
+        #07110f;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+      backdrop-filter: blur(18px);
+    }
+    .metric-value { font-variant-numeric: tabular-nums; }
+    .chart-wrap { height: 290px; }
+    .pulse-dot { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); animation: pulse 2s infinite; }
+    @keyframes pulse {
+      70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    }
+  </style>
 </head>
-<body class="min-h-screen bg-slate-950 text-slate-100">
-  <main class="mx-auto max-w-5xl px-5 py-10">
-    <header class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+<body class="min-h-screen text-slate-100 antialiased">
+  <main class="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-9">
+    <header class="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p class="mb-2 text-sm font-semibold uppercase tracking-[0.25em] text-emerald-400">
-          Felicity IVGM15KLP3G1
+        <div class="mb-3 flex flex-wrap items-center gap-3">
+          <span class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
+            Felicity IVGM
+          </span>
+          <span id="source-badge" class="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs font-medium text-emerald-200">
+            Локальные данные
+          </span>
+        </div>
+        <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+          Энергия дома
+        </h1>
+        <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+          Живой обзор солнечной генерации, потребления, аккумулятора и трёхфазной сети.
         </p>
-        <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Регистры инвертора</h1>
       </div>
-      <div class="flex items-center gap-2 text-sm text-slate-400">
-        <span id="status-dot" class="h-2.5 w-2.5 rounded-full bg-amber-400"></span>
-        <span id="status">Ожидание данных…</span>
+      <div class="panel flex items-center gap-3 rounded-2xl px-4 py-3">
+        <span id="status-dot" class="pulse-dot h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
+        <div>
+          <p id="status" class="text-sm font-medium text-slate-200">Подключение…</p>
+          <p id="timestamp" class="mt-0.5 text-xs text-slate-500">Ожидание первого снимка</p>
+        </div>
       </div>
     </header>
 
-    <section class="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-2xl shadow-emerald-950/20">
-      <div class="mb-5 flex flex-wrap gap-x-8 gap-y-2 text-sm text-slate-400">
-        <p>Последнее чтение: <span id="timestamp" class="text-slate-200">—</span></p>
-        <p>Начальный адрес: <span id="start-address" class="text-slate-200">—</span></p>
-      </div>
-      <div id="registers" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"></div>
+    <section class="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <article class="panel relative overflow-hidden rounded-3xl p-5">
+        <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-amber-400/10 blur-2xl"></div>
+        <div class="flex items-start justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Солнечная генерация</p>
+            <p class="mt-3"><span id="pv-total" class="metric-value text-4xl font-semibold text-white">—</span><span class="ml-2 text-sm text-slate-500">Вт</span></p>
+          </div>
+          <span class="rounded-2xl bg-amber-300/10 p-3 text-xl text-amber-300" aria-hidden="true">☀</span>
+        </div>
+        <p class="mt-4 text-sm text-slate-500">PV1 <span id="pv1" class="text-slate-300">—</span> · PV2 <span id="pv2" class="text-slate-300">—</span></p>
+        <p id="pv-electric" class="mt-1 text-xs text-slate-600">Напряжение и ток: ожидание…</p>
+      </article>
+
+      <article class="panel relative overflow-hidden rounded-3xl p-5">
+        <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-sky-400/10 blur-2xl"></div>
+        <div class="flex items-start justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Потребление дома</p>
+            <p class="mt-3"><span id="load-total" class="metric-value text-4xl font-semibold text-white">—</span><span class="ml-2 text-sm text-slate-500">Вт</span></p>
+          </div>
+          <span class="rounded-2xl bg-sky-300/10 p-3 text-xl text-sky-300" aria-hidden="true">⌂</span>
+        </div>
+        <p id="energy-balance" class="mt-4 text-sm text-slate-500">По фазам: ожидание данных…</p>
+        <p id="inverter-output" class="mt-1 text-xs text-slate-600">Инвертор и резерв: ожидание…</p>
+      </article>
+
+      <article class="panel relative overflow-hidden rounded-3xl p-5">
+        <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-emerald-400/10 blur-2xl"></div>
+        <div class="flex items-start justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Аккумулятор</p>
+            <p class="mt-3"><span id="soc" class="metric-value text-4xl font-semibold text-white">—</span><span class="ml-1 text-sm text-slate-500">%</span></p>
+          </div>
+          <span class="rounded-2xl bg-emerald-300/10 p-3 text-xl text-emerald-300" aria-hidden="true">▰</span>
+        </div>
+        <div class="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-800">
+          <div id="soc-bar" class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-lime-300 transition-all duration-700" style="width: 0%"></div>
+        </div>
+        <p class="mt-2 text-sm text-slate-500"><span id="battery-voltage">—</span> В · <span id="battery-power">—</span></p>
+        <p id="bms-summary" class="mt-1 text-xs text-slate-600">BMS: ожидание данных…</p>
+      </article>
+
+      <article class="panel relative overflow-hidden rounded-3xl p-5">
+        <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-violet-400/10 blur-2xl"></div>
+        <div class="flex items-start justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Напряжение сети</p>
+            <p class="mt-3"><span id="grid-average" class="metric-value text-4xl font-semibold text-white">—</span><span class="ml-2 text-sm text-slate-500">В</span></p>
+          </div>
+          <span class="rounded-2xl bg-violet-300/10 p-3 text-xl text-violet-300" aria-hidden="true">ϟ</span>
+        </div>
+        <p class="mt-4 text-sm text-slate-500">Обмен: <span id="grid-power" class="text-slate-300">—</span></p>
+        <p class="mt-1 text-xs text-slate-600">Частота: <span id="grid-frequency">—</span> Гц</p>
+      </article>
+    </section>
+
+    <section class="grid gap-5 xl:grid-cols-5">
+      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-3">
+        <div class="mb-5 flex items-center justify-between gap-4">
+          <div>
+            <h2 class="font-semibold text-white">Генерация и потребление</h2>
+            <p class="mt-1 text-xs text-slate-500">Последние 6 минут · Вт</p>
+          </div>
+          <div class="flex gap-4 text-xs text-slate-400">
+            <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-300"></i>PV</span>
+            <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-400"></i>Нагрузка</span>
+            <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400"></i>Батарея (+ заряд)</span>
+            <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-violet-400"></i>Сеть</span>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="power-chart" aria-label="График генерации и потребления"></canvas></div>
+      </article>
+
+      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-2">
+        <div class="mb-5">
+          <h2 class="font-semibold text-white">Аккумулятор</h2>
+          <p class="mt-1 text-xs text-slate-500">SOC и напряжение батареи</p>
+        </div>
+        <div class="chart-wrap"><canvas id="battery-chart" aria-label="График аккумулятора"></canvas></div>
+      </article>
+
+      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-3">
+        <div class="mb-5">
+          <h2 class="font-semibold text-white">Напряжение сети</h2>
+          <p class="mt-1 text-xs text-slate-500">L1, L2 и L3 · В</p>
+        </div>
+        <div class="chart-wrap"><canvas id="grid-chart" aria-label="График напряжения сети"></canvas></div>
+      </article>
+
+      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-2">
+        <div class="mb-5">
+          <h2 class="font-semibold text-white">Нагрузка по фазам</h2>
+          <p class="mt-1 text-xs text-slate-500">Текущее распределение · Вт</p>
+        </div>
+        <div class="chart-wrap"><canvas id="phases-chart" aria-label="Нагрузка по фазам"></canvas></div>
+      </article>
+
+      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-3">
+        <div class="mb-5">
+          <h2 class="font-semibold text-white">Солнечные трекеры</h2>
+          <p class="mt-1 text-xs text-slate-500">Мощность и напряжение MPPT1 / MPPT2</p>
+        </div>
+        <div class="chart-wrap"><canvas id="pv-chart" aria-label="График солнечных трекеров"></canvas></div>
+      </article>
+
+      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-2">
+        <div class="mb-5">
+          <h2 class="font-semibold text-white">Температуры</h2>
+          <p class="mt-1 text-xs text-slate-500">Инвертор, DC, трансформатор и BMS · °C</p>
+        </div>
+        <div class="chart-wrap"><canvas id="temperature-chart" aria-label="График температур"></canvas></div>
+      </article>
+
+      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-5">
+        <div class="mb-5">
+          <h2 class="font-semibold text-white">Батарейные модули</h2>
+          <p class="mt-1 text-xs text-slate-500">Ток каждого BMS и разброс напряжения ячеек</p>
+        </div>
+        <div class="chart-wrap"><canvas id="bms-chart" aria-label="График батарейных модулей"></canvas></div>
+      </article>
     </section>
   </main>
 
   <script>
-    const registersElement = document.querySelector("#registers");
-    const timestampElement = document.querySelector("#timestamp");
-    const addressElement = document.querySelector("#start-address");
-    const statusElement = document.querySelector("#status");
-    const statusDot = document.querySelector("#status-dot");
+    const MAX_POINTS = 180;
+    const state = { lastId: null };
+    const $ = (id) => document.getElementById(id);
+    const optionalNumber = (value) => value === undefined || value === null ? null : Number(value);
+    const formatNumber = (value, digits = 0) => Number(value).toLocaleString("ru-RU", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+    const timeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", {
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
 
-    function setStatus(text, ok) {
-      statusElement.textContent = text;
-      statusDot.className = `h-2.5 w-2.5 rounded-full ${ok ? "bg-emerald-400" : "bg-rose-400"}`;
+    Chart.defaults.color = "#64748b";
+    Chart.defaults.borderColor = "rgba(148, 163, 184, 0.08)";
+    Chart.defaults.font.family = "ui-sans-serif, system-ui, sans-serif";
+
+    const commonLineOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 350 },
+      interaction: { intersect: false, mode: "index" },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 7 } },
+        y: { beginAtZero: false, ticks: { maxTicksLimit: 5 } }
+      }
+    };
+
+    const lineDataset = (label, color, fill = false) => ({
+      label,
+      data: [],
+      borderColor: color,
+      backgroundColor: fill ? `${color}18` : color,
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.35,
+      fill
+    });
+
+    const powerChart = new Chart($("power-chart"), {
+      type: "line",
+      data: { labels: [], datasets: [
+        lineDataset("PV", "#fbbf24", true),
+        lineDataset("Нагрузка", "#38bdf8"),
+        lineDataset("Батарея", "#34d399"),
+        lineDataset("Сеть", "#a78bfa")
+      ]},
+      options: commonLineOptions
+    });
+
+    const batteryChart = new Chart($("battery-chart"), {
+      type: "line",
+      data: { labels: [], datasets: [
+        { ...lineDataset("SOC, %", "#34d399", true), yAxisID: "soc" },
+        { ...lineDataset("Батарея, В", "#a78bfa"), yAxisID: "voltage" }
+      ]},
+      options: {
+        ...commonLineOptions,
+        scales: {
+          x: commonLineOptions.scales.x,
+          soc: { position: "left", min: 35, max: 100, ticks: { maxTicksLimit: 5 } },
+          voltage: { position: "right", min: 49, max: 54, grid: { display: false }, ticks: { maxTicksLimit: 5 } }
+        }
+      }
+    });
+
+    const gridChart = new Chart($("grid-chart"), {
+      type: "line",
+      data: { labels: [], datasets: [
+        lineDataset("L1", "#a78bfa"),
+        lineDataset("L2", "#34d399"),
+        lineDataset("L3", "#fb7185")
+      ]},
+      options: {
+        ...commonLineOptions,
+        scales: {
+          x: commonLineOptions.scales.x,
+          y: { min: 224, max: 236, ticks: { maxTicksLimit: 5 } }
+        }
+      }
+    });
+
+    const phasesChart = new Chart($("phases-chart"), {
+      type: "bar",
+      data: {
+        labels: ["L1", "L2", "L3"],
+        datasets: [{
+          data: [0, 0, 0],
+          backgroundColor: ["#38bdf8", "#34d399", "#a78bfa"],
+          borderRadius: 10,
+          borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 500 },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, suggestedMax: 2000, ticks: { maxTicksLimit: 5 } }
+        }
+      }
+    });
+
+    const pvChart = new Chart($("pv-chart"), {
+      type: "line",
+      data: { labels: [], datasets: [
+        { ...lineDataset("PV1, Вт", "#fbbf24", true), yAxisID: "power" },
+        { ...lineDataset("PV2, Вт", "#fb923c"), yAxisID: "power" },
+        { ...lineDataset("MPPT1, В", "#38bdf8"), yAxisID: "voltage" },
+        { ...lineDataset("MPPT2, В", "#a78bfa"), yAxisID: "voltage" }
+      ]},
+      options: {
+        ...commonLineOptions,
+        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
+        scales: {
+          x: commonLineOptions.scales.x,
+          power: { position: "left", beginAtZero: true, ticks: { maxTicksLimit: 5 } },
+          voltage: { position: "right", beginAtZero: false, grid: { display: false }, ticks: { maxTicksLimit: 5 } }
+        }
+      }
+    });
+
+    const temperatureChart = new Chart($("temperature-chart"), {
+      type: "line",
+      data: { labels: [], datasets: [
+        lineDataset("Инвертор", "#fb7185"),
+        lineDataset("DC", "#fbbf24"),
+        lineDataset("Трансформатор", "#a78bfa"),
+        lineDataset("BMS 1", "#34d399"),
+        lineDataset("BMS 2", "#38bdf8")
+      ]},
+      options: {
+        ...commonLineOptions,
+        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } }
+      }
+    });
+
+    const bmsChart = new Chart($("bms-chart"), {
+      type: "line",
+      data: { labels: [], datasets: [
+        { ...lineDataset("BMS 1 ток, А", "#34d399", true), yAxisID: "current" },
+        { ...lineDataset("BMS 2 ток, А", "#38bdf8"), yAxisID: "current" },
+        { ...lineDataset("BMS 1 Δ ячеек, мВ", "#fbbf24"), yAxisID: "delta" },
+        { ...lineDataset("BMS 2 Δ ячеек, мВ", "#fb7185"), yAxisID: "delta" }
+      ]},
+      options: {
+        ...commonLineOptions,
+        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
+        scales: {
+          x: commonLineOptions.scales.x,
+          current: { position: "left", beginAtZero: true, ticks: { maxTicksLimit: 5 } },
+          delta: { position: "right", beginAtZero: true, grid: { display: false }, ticks: { maxTicksLimit: 5 } }
+        }
+      }
+    });
+
+    function setConnection(ok, message) {
+      $("status").textContent = message;
+      $("status-dot").className = ok
+        ? "pulse-dot h-2.5 w-2.5 rounded-full bg-emerald-400"
+        : "h-2.5 w-2.5 rounded-full bg-rose-400";
     }
 
-    function render(data) {
-      timestampElement.textContent = new Date(data.timestamp).toLocaleString("ru-RU");
-      addressElement.textContent = data.start_address;
-      registersElement.innerHTML = data.registers.map((value, index) => `
-        <article class="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-          <p class="text-xs font-medium uppercase tracking-wider text-slate-500">
-            Регистр ${data.start_address + index}
-          </p>
-          <p class="mt-2 font-mono text-2xl font-semibold text-emerald-300">${value}</p>
-        </article>
-      `).join("");
-      setStatus("Данные получены", true);
+    function updateCards(snapshot) {
+      const data = snapshot.parsed;
+      const sourceIsSimulator = snapshot.source === "simulator";
+      $("source-badge").textContent = sourceIsSimulator ? "Режим симуляции" : "Локально · Wi-Fi";
+      $("pv-total").textContent = formatNumber(data.pv_power_w.total);
+      $("pv1").textContent = `${formatNumber(data.pv_power_w.pv1)} Вт`;
+      $("pv2").textContent = `${formatNumber(data.pv_power_w.pv2)} Вт`;
+      const pvVoltage = data.pv_voltage_v;
+      const pvCurrent = data.pv_current_a;
+      $("pv-electric").textContent = pvVoltage && pvCurrent
+        ? `MPPT1 ${formatNumber(pvVoltage.mppt1, 1)} В / ${formatNumber(pvCurrent.mppt1, 1)} А · MPPT2 ${formatNumber(pvVoltage.mppt2, 1)} В / ${formatNumber(pvCurrent.mppt2, 1)} А`
+        : "Напряжение и ток появятся в новых снимках";
+      $("load-total").textContent = formatNumber(data.load_power_w.total);
+      $("soc").textContent = formatNumber(data.soc_percent);
+      $("soc-bar").style.width = `${data.soc_percent}%`;
+      $("battery-voltage").textContent = formatNumber(data.battery_voltage_v, 1);
+      const batteryPower = Number(data.battery_power_w || 0);
+      $("battery-power").textContent = batteryPower > 0
+        ? `заряд ${formatNumber(batteryPower)} Вт`
+        : batteryPower < 0
+          ? `разряд ${formatNumber(Math.abs(batteryPower))} Вт`
+          : "ожидание";
+
+      const grid = data.grid_voltage_v;
+      $("grid-average").textContent = formatNumber((grid.l1 + grid.l2 + grid.l3) / 3, 1);
+      const gridPower = Number(data.grid_power_w?.total || 0);
+      $("grid-power").textContent = gridPower > 0
+        ? `импорт ${formatNumber(gridPower)} Вт`
+        : gridPower < 0
+          ? `экспорт ${formatNumber(Math.abs(gridPower))} Вт`
+          : "0 Вт";
+      const phases = data.load_power_w;
+      $("energy-balance").textContent = `L1 ${formatNumber(phases.l1)} · L2 ${formatNumber(phases.l2)} · L3 ${formatNumber(phases.l3)} Вт`;
+      $("inverter-output").textContent = `Инвертор ${formatNumber(data.inverter_power_w?.total || 0)} Вт · резерв ${formatNumber(data.backup_power_w?.total || 0)} Вт`;
+      $("grid-frequency").textContent = data.grid_frequency_hz == null ? "—" : formatNumber(data.grid_frequency_hz, 2);
+      const batteries = data.batteries || [];
+      $("bms-summary").textContent = batteries.length
+        ? `${batteries.length} BMS · Δ ячеек ${batteries.map((battery) => `${formatNumber(battery.cell_delta_mv, 0)} мВ`).join(" / ")}`
+        : "BMS-модули появятся в новых снимках";
+
+      phasesChart.data.datasets[0].data = [
+        data.load_power_w.l1, data.load_power_w.l2, data.load_power_w.l3
+      ];
+      phasesChart.update();
+      $("timestamp").textContent = `Обновлено ${new Date(snapshot.timestamp).toLocaleString("ru-RU")}`;
     }
 
-    async function refresh() {
+    function pushSnapshot(snapshot, animate = true) {
+      const label = timeLabel(snapshot.timestamp);
+      const data = snapshot.parsed;
+      const charts = [powerChart, batteryChart, gridChart, pvChart, temperatureChart, bmsChart];
+      charts.forEach((chart) => chart.data.labels.push(label));
+
+      powerChart.data.datasets[0].data.push(data.pv_power_w.total);
+      powerChart.data.datasets[1].data.push(data.load_power_w.total);
+      powerChart.data.datasets[2].data.push(Number(data.battery_power_w || 0));
+      powerChart.data.datasets[3].data.push(optionalNumber(data.grid_power_w?.total));
+      batteryChart.data.datasets[0].data.push(data.soc_percent);
+      batteryChart.data.datasets[1].data.push(data.battery_voltage_v);
+      gridChart.data.datasets[0].data.push(data.grid_voltage_v.l1);
+      gridChart.data.datasets[1].data.push(data.grid_voltage_v.l2);
+      gridChart.data.datasets[2].data.push(data.grid_voltage_v.l3);
+
+      pvChart.data.datasets[0].data.push(optionalNumber(data.pv_power_w?.pv1));
+      pvChart.data.datasets[1].data.push(optionalNumber(data.pv_power_w?.pv2));
+      pvChart.data.datasets[2].data.push(optionalNumber(data.pv_voltage_v?.mppt1));
+      pvChart.data.datasets[3].data.push(optionalNumber(data.pv_voltage_v?.mppt2));
+
+      temperatureChart.data.datasets[0].data.push(optionalNumber(data.temperature_c?.inverter));
+      temperatureChart.data.datasets[1].data.push(optionalNumber(data.temperature_c?.dc));
+      temperatureChart.data.datasets[2].data.push(optionalNumber(data.temperature_c?.transformer));
+      temperatureChart.data.datasets[3].data.push(optionalNumber(data.batteries?.[0]?.temperature_c?.max));
+      temperatureChart.data.datasets[4].data.push(optionalNumber(data.batteries?.[1]?.temperature_c?.max));
+
+      bmsChart.data.datasets[0].data.push(optionalNumber(data.batteries?.[0]?.current_a));
+      bmsChart.data.datasets[1].data.push(optionalNumber(data.batteries?.[1]?.current_a));
+      bmsChart.data.datasets[2].data.push(optionalNumber(data.batteries?.[0]?.cell_delta_mv));
+      bmsChart.data.datasets[3].data.push(optionalNumber(data.batteries?.[1]?.cell_delta_mv));
+
+      charts.forEach((chart) => {
+        while (chart.data.labels.length > MAX_POINTS) {
+          chart.data.labels.shift();
+          chart.data.datasets.forEach((dataset) => dataset.data.shift());
+        }
+        chart.update(animate ? undefined : "none");
+      });
+    }
+
+    async function loadHistory() {
+      const response = await fetch(`/api/history?limit=${MAX_POINTS}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const history = await response.json();
+      history.forEach((snapshot) => pushSnapshot(snapshot, false));
+      if (history.length) {
+        const latest = history[history.length - 1];
+        state.lastId = latest.id;
+        updateCards(latest);
+        return latest;
+      }
+      return null;
+    }
+
+    async function refreshCurrent() {
       try {
         const response = await fetch("/api/current", { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        render(await response.json());
+        const snapshot = await response.json();
+        if (snapshot.id !== state.lastId) {
+          state.lastId = snapshot.id;
+          updateCards(snapshot);
+          pushSnapshot(snapshot);
+        }
+        const ageSeconds = (Date.now() - new Date(snapshot.timestamp).getTime()) / 1000;
+        setConnection(ageSeconds <= 10, ageSeconds <= 10 ? "Инвертор подключён" : "Данные устарели");
       } catch (error) {
-        setStatus(error.message === "HTTP 404" ? "Ожидание первого опроса…" : "Нет связи с сервером", false);
+        setConnection(false, error.message === "HTTP 404" ? "Ожидание данных" : "Нет связи с API");
       }
     }
 
-    refresh();
-    setInterval(refresh, 1000);
+    async function start() {
+      try {
+        const latest = await loadHistory();
+        const ageSeconds = latest ? (Date.now() - new Date(latest.timestamp).getTime()) / 1000 : Infinity;
+        setConnection(ageSeconds <= 10, ageSeconds <= 10 ? "Инвертор подключён" : "Данные устарели");
+      } catch (error) {
+        setConnection(false, error.message === "HTTP 404" ? "Ожидание данных" : "Нет связи с API");
+      }
+      await refreshCurrent();
+      setInterval(refreshCurrent, 2000);
+    }
+
+    start();
   </script>
 </body>
 </html>
-

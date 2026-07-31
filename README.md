@@ -1,25 +1,93 @@
 # Felicity Dashboard
 
-Локальный монитор инвертора для Raspberry Pi 5.
+Локальная панель для гибридного инвертора Felicity IVGM. Текущая версия
+получает данные от штатного Wi-Fi-модуля по локальному TCP-протоколу, потому
+что RS-485-порт конкретной установки не отвечает на Modbus-запросы.
 
-## Архитектура
+## Как это устроено
 
 ```text
-Felicity inverter ──RS-485/Modbus RTU──> collector.py
-                                             │
-                                      запись каждые 2 с
-                                             ▼
-                                      SQLite (WAL mode)
-                                             │
-                                       чтение последней
-                                             ▼
-Browser <── / и /api/current ── FastAPI (app.py)
+Felicity Wi-Fi module (TCP 53970)
+               │ read-only запрос каждые 2 секунды
+               ▼
+        collector.py + parser
+               │ сырые и нормализованные данные
+               ▼
+          SQLite (WAL mode)
+               │
+               ▼
+     FastAPI ── /api/current
+             ├─ /api/history
+             ├─ /api/status
+             └─ / (панель с графиками)
 ```
 
-`collector.py` и `app.py` запускаются как отдельные процессы. Только сборщик
-открывает `/dev/ttyUSB0`. Время записывается в UTC в формате ISO 8601.
+В одной записи хранятся и исходные пакеты устройства, и разобранные значения.
+Симулятор пишет в ту же таблицу и использует тот же API, поэтому фронтенд не
+нужно переключать вручную.
 
-## Установка на Raspberry Pi
+Панель строит историю общей мощности, PV1/PV2, напряжений MPPT, SOC и
+напряжения аккумулятора, трёх фаз сети, нагрузки по фазам, температур, токов
+обоих BMS и разброса напряжения ячеек. В ответе `/api/current` дополнительно
+доступны пофазные токи, частота, DC-шина, мощность резервного выхода и полный
+сырой пакет устройства в поле `raw`.
+
+## Первый запуск на Mac
+
+В каталоге проекта:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+Проверка одного живого чтения и записи в базу:
+
+```bash
+.venv/bin/python collector.py --host 192.168.1.135 --once
+```
+
+Затем запустите два процесса. Первый терминал:
+
+```bash
+FELICITY_HOST=192.168.1.135 .venv/bin/python collector.py
+```
+
+Второй терминал:
+
+```bash
+.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Откройте [http://127.0.0.1:8000](http://127.0.0.1:8000). API доступен по
+адресам `/api/current`, `/api/history?limit=180` и `/api/status`.
+
+Настройки можно задать переменными окружения:
+
+- `FELICITY_HOST` — IP Wi-Fi-модуля, по умолчанию `192.168.1.135`;
+- `FELICITY_PORT` — локальный порт, по умолчанию `53970`;
+- `FELICITY_POLL_INTERVAL_SECONDS` — период опроса, по умолчанию `2`;
+- `FELICITY_DB_PATH` — путь к SQLite, по умолчанию `data/felicity.db`.
+
+## Режим симуляции
+
+Симулятор не подключается к инвертору:
+
+```bash
+.venv/bin/python simulator.py
+```
+
+Для единственного тестового снимка:
+
+```bash
+.venv/bin/python simulator.py --once
+```
+
+После этого веб-сервер запускается той же командой `uvicorn main:app`.
+
+## Raspberry Pi OS / обычный Linux
+
+Пример установки в `/opt`:
 
 ```bash
 sudo mkdir -p /opt/felicity-dashboard
@@ -28,48 +96,36 @@ sudo chown -R pi:pi /opt/felicity-dashboard
 cd /opt/felicity-dashboard
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-sudo usermod -aG dialout pi
+cp felicity.env.example felicity.env
 ```
 
-После добавления пользователя в `dialout` требуется выйти из системы и войти
-снова (или перезагрузить Raspberry Pi).
-
-## Тестовый запуск
-
-В первом терминале:
-
-```bash
-.venv/bin/python collector.py
-```
-
-Во втором терминале:
-
-```bash
-.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000
-```
-
-Откройте `http://IP-АДРЕС-RASPBERRY:8000`. Документация API доступна по
-`http://IP-АДРЕС-RASPBERRY:8000/docs`.
-
-Пример ответа:
-
-```json
-{
-  "id": 42,
-  "timestamp": "2026-07-28T12:34:56.123456+00:00",
-  "start_address": 0,
-  "registers": [230, 50, 0, 127, 18, 0, 0, 1, 65535, 24]
-}
-```
-
-## Автозапуск
-
-Скопируйте оба файла из каталога `systemd` в `/etc/systemd/system/`, затем:
+Укажите правильный IP в `felicity.env`, затем скопируйте service-файлы из
+`systemd/` в `/etc/systemd/system/` и включите их:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now felicity-collector felicity-web
 ```
 
-Если имя пользователя не `pi`, измените строку `User=` в обоих service-файлах.
+Важно: эти unit-файлы предназначены для Raspberry Pi OS и другого обычного
+Linux. На **Home Assistant OS** нет обычной установки systemd/venv; проект
+нужно упаковать как локальный Home Assistant add-on. Это следующий отдельный
+этап.
 
+## Старый Modbus-вариант
+
+Экспериментальный RS-485-сборщик сохранён в `modbus_collector.py`, а сканер
+регистров — в `scan_registers.py`. Они не используются веб-панелью по
+умолчанию.
+
+## Безопасность
+
+TCP-порт `53970` не имеет прикладной авторизации. Не пробрасывайте его на
+роутере и не публикуйте в интернет. Для будущего доступа из iOS безопаснее
+использовать VPN или авторизованный HTTPS-шлюз, не прямой доступ к модулю.
+
+## Проверки
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+```
