@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- Prevent Home Assistant Ingress and browsers from reusing stale dashboard HTML.
+- Add a visible UI version marker for quick deployment verification.
+
 ## 0.5.0
 
 - Clear live-data freshness state without a countdown progress bar.
