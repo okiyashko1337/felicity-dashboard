@@ -16,16 +16,18 @@ from analytics import build_energy_analytics, build_period_analytics
 from database import (
     get_latest_telemetry,
     get_latest_system_snapshot,
+    get_system_range,
     get_system_history,
     get_telemetry_history,
     get_telemetry_range,
+    get_telemetry_range_sampled,
     get_energy_daily,
     ensure_energy_daily,
     initialize_database,
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-UI_VERSION = "0.5.1"
+UI_VERSION = "0.6.0"
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
@@ -67,6 +69,24 @@ def current() -> dict:
 def history(limit: int = Query(default=180, ge=2, le=3600)) -> list[dict]:
     try:
         return get_telemetry_history(limit, DB_PATH)
+    except sqlite3.Error as error:
+        raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
+
+
+@app.get("/api/detail/history")
+def detail_history(
+    start: datetime,
+    end: datetime,
+    max_points: int = Query(default=900, ge=60, le=1440),
+) -> list[dict]:
+    if start.tzinfo is None or end.tzinfo is None:
+        raise HTTPException(status_code=422, detail="start and end must include timezone")
+    if end <= start:
+        raise HTTPException(status_code=422, detail="end must be after start")
+    if (end - start).total_seconds() > 36 * 3600:
+        raise HTTPException(status_code=422, detail="range cannot exceed 36 hours")
+    try:
+        return get_telemetry_range_sampled(start, end, max_points, DB_PATH)
     except sqlite3.Error as error:
         raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
 
@@ -164,5 +184,23 @@ def system_current() -> dict:
 def system_history(limit: int = Query(default=1440, ge=2, le=10080)) -> list[dict]:
     try:
         return get_system_history(limit, DB_PATH)
+    except sqlite3.Error as error:
+        raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
+
+
+@app.get("/api/system/range")
+def system_range(
+    start: datetime,
+    end: datetime,
+    max_points: int = Query(default=900, ge=2, le=1440),
+) -> list[dict]:
+    if start.tzinfo is None or end.tzinfo is None:
+        raise HTTPException(status_code=422, detail="start and end must include timezone")
+    if end <= start:
+        raise HTTPException(status_code=422, detail="end must be after start")
+    if (end - start).total_seconds() > 36 * 3600:
+        raise HTTPException(status_code=422, detail="range cannot exceed 36 hours")
+    try:
+        return get_system_range(start, end, max_points, DB_PATH)
     except sqlite3.Error as error:
         raise HTTPException(status_code=500, detail=f"Database error: {error}") from error

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- Detail-chart scales for 15 minutes, 1 hour, 6 hours, and the current day.
+- Fixed current-day timeline from 00:00 through 23:59 with future time left empty.
+- Five secondary diagnostic cards for BMS, temperatures, DC/MPPT, and backup state.
+
 ## 0.5.1
 
 - Prevent Home Assistant Ingress and browsers from reusing stale dashboard HTML.
