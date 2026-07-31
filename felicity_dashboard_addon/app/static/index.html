@@ -4,62 +4,76 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07110f">
-  <title>Felicity Energy — Живая панель</title>
+  <title>Felicity Energy — Энергия дома</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <style>
     :root {
       color-scheme: dark;
-      --panel: rgba(15, 28, 25, 0.78);
-      --line: rgba(148, 163, 184, 0.13);
+      --panel: rgba(14, 28, 24, .86);
+      --panel-strong: rgba(20, 38, 33, .9);
+      --line: rgba(148, 163, 184, .13);
+      --muted: #82918c;
     }
     body {
       background:
-        radial-gradient(circle at 15% -10%, rgba(16, 185, 129, 0.18), transparent 34rem),
-        radial-gradient(circle at 95% 5%, rgba(245, 158, 11, 0.1), transparent 28rem),
+        radial-gradient(circle at 12% -10%, rgba(52, 211, 153, .17), transparent 34rem),
+        radial-gradient(circle at 94% 2%, rgba(251, 191, 36, .09), transparent 28rem),
         #07110f;
     }
     .panel {
-      background: var(--panel);
       border: 1px solid var(--line);
-      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+      background: var(--panel);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .18);
       backdrop-filter: blur(18px);
     }
+    .summary-card {
+      --accent: #34d399;
+      position: relative;
+      min-height: 150px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      text-align: left;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+    .summary-card:hover { transform: translateY(-2px); }
+    .summary-card[aria-pressed="true"] {
+      border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+      background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+    }
+    .summary-card[aria-pressed="true"]::after {
+      position: absolute;
+      right: 16px;
+      bottom: 14px;
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent);
+      content: "";
+    }
     .metric-value { font-variant-numeric: tabular-nums; }
-    .chart-wrap { height: 290px; }
-    .day-chart-wrap { height: 340px; }
-    .date-control {
-      color-scheme: dark;
-      background: rgba(2, 6, 23, 0.35);
+    .chart-wrap { height: 310px; }
+    .history-chart-wrap { height: 340px; }
+    button:disabled { cursor: not-allowed; opacity: .3; }
+    @media (max-width: 640px) {
+      .summary-card { min-height: 130px; }
+      .chart-wrap { height: 260px; }
+      .history-chart-wrap { height: 300px; }
     }
-    .pulse-dot { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); animation: pulse 2s infinite; }
-    @keyframes pulse {
-      70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
-    }
+    @media (prefers-reduced-motion: reduce) { .summary-card { transition: none; } }
   </style>
 </head>
 <body class="min-h-screen text-slate-100 antialiased">
   <main class="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-9">
-    <header class="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+    <header class="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <div class="mb-3 flex flex-wrap items-center gap-3">
-          <span class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
-            Felicity IVGM
-          </span>
-          <span id="source-badge" class="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs font-medium text-emerald-200">
-            Локальные данные
-          </span>
-        </div>
-        <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-          Энергия дома
-        </h1>
-        <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-          Живой обзор солнечной генерации, потребления, аккумулятора и трёхфазной сети.
-        </p>
+        <p class="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">Felicity IVGM</p>
+        <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Энергия дома</h1>
+        <p class="mt-2 text-sm text-slate-500">Живые данные инвертора и история, которая хранится локально.</p>
       </div>
       <div class="panel flex items-center gap-3 rounded-2xl px-4 py-3">
-        <span id="status-dot" class="pulse-dot h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
+        <span id="status-dot" class="h-2.5 w-2.5 rounded-full bg-amber-300"></span>
         <div>
           <p id="status" class="text-sm font-medium text-slate-200">Подключение…</p>
           <p id="timestamp" class="mt-0.5 text-xs text-slate-500">Ожидание первого снимка</p>
@@ -67,772 +81,425 @@
       </div>
     </header>
 
-    <section class="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <article class="panel relative overflow-hidden rounded-3xl p-5">
-        <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-amber-400/10 blur-2xl"></div>
-        <div class="flex items-start justify-between">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Солнечная генерация</p>
-            <p class="mt-3"><span id="pv-total" class="metric-value text-4xl font-semibold text-white">—</span><span class="ml-2 text-sm text-slate-500">Вт</span></p>
-          </div>
-          <span class="rounded-2xl bg-amber-300/10 p-3 text-xl text-amber-300" aria-hidden="true">☀</span>
-        </div>
-        <p class="mt-4 text-sm text-slate-500">PV1 <span id="pv1" class="text-slate-300">—</span> · PV2 <span id="pv2" class="text-slate-300">—</span></p>
-        <p id="pv-electric" class="mt-1 text-xs text-slate-600">Напряжение и ток: ожидание…</p>
-      </article>
-
-      <article class="panel relative overflow-hidden rounded-3xl p-5">
-        <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-sky-400/10 blur-2xl"></div>
-        <div class="flex items-start justify-between">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Потребление дома</p>
-            <p class="mt-3"><span id="load-total" class="metric-value text-4xl font-semibold text-white">—</span><span class="ml-2 text-sm text-slate-500">Вт</span></p>
-          </div>
-          <span class="rounded-2xl bg-sky-300/10 p-3 text-xl text-sky-300" aria-hidden="true">⌂</span>
-        </div>
-        <p id="energy-balance" class="mt-4 text-sm text-slate-500">По фазам: ожидание данных…</p>
-        <p id="inverter-output" class="mt-1 text-xs text-slate-600">Инвертор и резерв: ожидание…</p>
-      </article>
-
-      <article class="panel relative overflow-hidden rounded-3xl p-5">
-        <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-emerald-400/10 blur-2xl"></div>
-        <div class="flex items-start justify-between">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Аккумулятор</p>
-            <p class="mt-3"><span id="soc" class="metric-value text-4xl font-semibold text-white">—</span><span class="ml-1 text-sm text-slate-500">%</span></p>
-          </div>
-          <span class="rounded-2xl bg-emerald-300/10 p-3 text-xl text-emerald-300" aria-hidden="true">▰</span>
-        </div>
-        <div class="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-800">
-          <div id="soc-bar" class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-lime-300 transition-all duration-700" style="width: 0%"></div>
-        </div>
-        <p class="mt-2 text-sm text-slate-500"><span id="battery-voltage">—</span> В · <span id="battery-power">—</span></p>
-        <p id="bms-summary" class="mt-1 text-xs text-slate-600">BMS: ожидание данных…</p>
-      </article>
-
-      <article class="panel relative overflow-hidden rounded-3xl p-5">
-        <div class="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-violet-400/10 blur-2xl"></div>
-        <div class="flex items-start justify-between">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Напряжение сети</p>
-            <p class="mt-3"><span id="grid-average" class="metric-value text-4xl font-semibold text-white">—</span><span class="ml-2 text-sm text-slate-500">В</span></p>
-          </div>
-          <span class="rounded-2xl bg-violet-300/10 p-3 text-xl text-violet-300" aria-hidden="true">ϟ</span>
-        </div>
-        <p class="mt-4 text-sm text-slate-500">Обмен: <span id="grid-power" class="text-slate-300">—</span></p>
-        <p class="mt-1 text-xs text-slate-600">Частота: <span id="grid-frequency">—</span> Гц</p>
-      </article>
+    <section id="summary-grid" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Выбор подробного графика">
+      <button class="summary-card rounded-3xl p-5" style="--accent:#fbbf24" data-panel="solar" aria-pressed="true">
+        <span class="block min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Солнечная генерация</span>
+        <span class="mt-3 block"><strong id="pv-total" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">Вт</small></span>
+        <span id="pv-detail" class="mt-3 block truncate text-xs text-slate-500">PV1 — · PV2 —</span>
+      </button>
+      <button class="summary-card rounded-3xl p-5" style="--accent:#38bdf8" data-panel="home" aria-pressed="false">
+        <span class="block min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Потребление дома</span>
+        <span class="mt-3 block"><strong id="load-total" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">Вт</small></span>
+        <span id="load-detail" class="mt-3 block truncate text-xs text-slate-500">L1 — · L2 — · L3 —</span>
+      </button>
+      <button class="summary-card rounded-3xl p-5" style="--accent:#34d399" data-panel="battery" aria-pressed="false">
+        <span class="block min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Аккумулятор</span>
+        <span class="mt-3 block"><strong id="soc" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">%</small></span>
+        <span id="battery-detail" class="mt-3 block truncate text-xs text-slate-500">— В · ожидание</span>
+      </button>
+      <button class="summary-card rounded-3xl p-5" style="--accent:#a78bfa" data-panel="grid" aria-pressed="false">
+        <span class="block min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Напряжение сети</span>
+        <span class="mt-3 block"><strong id="grid-average" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">В</small></span>
+        <span id="grid-detail" class="mt-3 block truncate text-xs text-slate-500">Обмен — · частота —</span>
+      </button>
+      <button class="summary-card rounded-3xl p-5 sm:col-span-2 xl:col-span-1" style="--accent:#fb7185" data-panel="system" aria-pressed="false">
+        <span class="block min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Загрузка системы</span>
+        <span class="mt-3 block"><strong id="system-cpu" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">% CPU</small></span>
+        <span id="system-detail" class="mt-3 block truncate text-xs text-slate-500">RAM — · температура —</span>
+      </button>
     </section>
 
-    <section class="panel mb-5 rounded-3xl p-5 sm:p-6">
-      <div class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <section id="detail-panel" class="panel mt-3 rounded-3xl p-5 sm:p-6" aria-live="polite">
+      <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">История</p>
-          <h2 class="mt-1 text-xl font-semibold text-white">Энергия за выбранный день</h2>
-          <p id="day-status" class="mt-1 text-xs text-slate-500">Загрузка дневной истории…</p>
+          <p id="detail-kicker" class="text-xs font-semibold uppercase tracking-[.2em] text-amber-300">Подробный график</p>
+          <h2 id="detail-title" class="mt-1 text-xl font-semibold text-white">Солнечная генерация</h2>
+          <p id="detail-subtitle" class="mt-1 text-xs text-slate-500">PV1, PV2 и напряжение MPPT · последние минуты</p>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <button id="previous-day" class="rounded-xl border border-white/10 bg-black/10 px-4 py-2.5 text-sm text-slate-300 transition hover:border-emerald-400/30 hover:text-white" aria-label="Предыдущий день">←</button>
-          <input id="history-date" type="date" class="date-control rounded-xl border border-white/10 px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-400/40">
-          <button id="next-day" class="rounded-xl border border-white/10 bg-black/10 px-4 py-2.5 text-sm text-slate-300 transition hover:border-emerald-400/30 hover:text-white" aria-label="Следующий день">→</button>
-          <button id="today-day" class="rounded-xl bg-emerald-400/10 px-4 py-2.5 text-sm font-medium text-emerald-300 transition hover:bg-emerald-400/20">Сегодня</button>
+        <div class="sm:text-right">
+          <p id="detail-value" class="metric-value text-2xl font-semibold text-white">—</p>
+          <p id="detail-value-label" class="mt-1 text-xs text-slate-500">текущая мощность</p>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="detail-chart" aria-label="Подробный график выбранного показателя"></canvas></div>
+    </section>
+
+    <section class="panel mt-5 rounded-3xl p-5 sm:p-6">
+      <div class="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">История</p>
+          <h2 class="mt-1 text-xl font-semibold text-white">Сохранённые показания</h2>
+          <p id="history-status" class="mt-1 text-xs text-slate-500">Загрузка истории…</p>
+        </div>
+        <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+          <div id="period-tabs" class="flex rounded-xl border border-white/10 bg-black/10 p-1" role="group" aria-label="Период истории">
+            <button class="period-button flex-1 rounded-lg px-3 py-2 text-sm text-white" data-period="day" aria-pressed="true">День</button>
+            <button class="period-button flex-1 rounded-lg px-3 py-2 text-sm text-slate-500" data-period="week" aria-pressed="false">Неделя</button>
+            <button class="period-button flex-1 rounded-lg px-3 py-2 text-sm text-slate-500" data-period="month" aria-pressed="false">Месяц</button>
+            <button class="period-button flex-1 rounded-lg px-3 py-2 text-sm text-slate-500" data-period="all" aria-pressed="false">За всё время</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="previous-period" class="rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-slate-300" aria-label="Предыдущий период">←</button>
+            <span id="period-label" class="min-w-36 text-center text-sm text-slate-300">—</span>
+            <button id="next-period" class="rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-slate-300" aria-label="Следующий период">→</button>
+            <button id="current-period" class="rounded-xl bg-emerald-400/10 px-3 py-2 text-sm font-medium text-emerald-300">Сейчас</button>
+          </div>
         </div>
       </div>
 
       <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-        <div class="rounded-2xl border border-amber-300/10 bg-amber-300/5 p-4"><p class="text-xs text-slate-500">PV</p><p class="mt-2 text-2xl font-semibold"><span id="stat-pv">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
-        <div class="rounded-2xl border border-sky-300/10 bg-sky-300/5 p-4"><p class="text-xs text-slate-500">Дом</p><p class="mt-2 text-2xl font-semibold"><span id="stat-load">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
-        <div class="rounded-2xl border border-violet-300/10 bg-violet-300/5 p-4"><p class="text-xs text-slate-500">Из сети</p><p class="mt-2 text-2xl font-semibold"><span id="stat-import">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
-        <div class="rounded-2xl border border-fuchsia-300/10 bg-fuchsia-300/5 p-4"><p class="text-xs text-slate-500">В сеть</p><p class="mt-2 text-2xl font-semibold"><span id="stat-export">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
-        <div class="rounded-2xl border border-emerald-300/10 bg-emerald-300/5 p-4"><p class="text-xs text-slate-500">Заряд</p><p class="mt-2 text-2xl font-semibold"><span id="stat-charge">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
-        <div class="rounded-2xl border border-rose-300/10 bg-rose-300/5 p-4"><p class="text-xs text-slate-500">Разряд</p><p class="mt-2 text-2xl font-semibold"><span id="stat-discharge">—</span><span class="ml-1 text-xs text-slate-500">кВт·ч</span></p></div>
-        <div class="rounded-2xl border border-lime-300/10 bg-lime-300/5 p-4"><p class="text-xs text-slate-500">Своё PV</p><p class="mt-2 text-2xl font-semibold"><span id="stat-self">—</span><span class="ml-1 text-xs text-slate-500">%</span></p></div>
+        <div class="rounded-2xl bg-amber-300/5 p-4"><p class="text-xs text-slate-500">PV</p><p class="mt-2 text-xl font-semibold"><span id="stat-pv">—</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p></div>
+        <div class="rounded-2xl bg-sky-300/5 p-4"><p class="text-xs text-slate-500">Дом</p><p class="mt-2 text-xl font-semibold"><span id="stat-load">—</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p></div>
+        <div class="rounded-2xl bg-violet-300/5 p-4"><p class="text-xs text-slate-500">Из сети</p><p class="mt-2 text-xl font-semibold"><span id="stat-import">—</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p></div>
+        <div class="rounded-2xl bg-fuchsia-300/5 p-4"><p class="text-xs text-slate-500">В сеть</p><p class="mt-2 text-xl font-semibold"><span id="stat-export">—</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p></div>
+        <div class="rounded-2xl bg-emerald-300/5 p-4"><p class="text-xs text-slate-500">Заряд</p><p class="mt-2 text-xl font-semibold"><span id="stat-charge">—</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p></div>
+        <div class="rounded-2xl bg-rose-300/5 p-4"><p class="text-xs text-slate-500">Разряд</p><p class="mt-2 text-xl font-semibold"><span id="stat-discharge">—</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p></div>
+        <div class="rounded-2xl bg-lime-300/5 p-4"><p class="text-xs text-slate-500">Своё PV</p><p class="mt-2 text-xl font-semibold"><span id="stat-self">—</span><small class="ml-1 text-xs text-slate-500">%</small></p></div>
       </div>
 
       <div class="rounded-2xl border border-white/5 bg-black/10 p-4 sm:p-5">
-        <div class="mb-3 flex flex-wrap gap-4 text-xs text-slate-400">
-          <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-300"></i>PV</span>
-          <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-400"></i>Дом</span>
-          <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400"></i>Батарея (+ заряд)</span>
-          <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-violet-400"></i>Сеть (+ импорт)</span>
-        </div>
-        <div class="day-chart-wrap"><canvas id="daily-energy-chart" aria-label="Дневной график энергии"></canvas></div>
+        <div class="history-chart-wrap"><canvas id="history-chart" aria-label="График сохранённой истории"></canvas></div>
       </div>
-    </section>
-
-    <section class="panel mb-5 rounded-3xl p-5 sm:p-6">
-      <div class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-amber-400">Аккумулятор</p>
-          <h2 class="mt-1 text-xl font-semibold text-white">Заряд, разряд и состояние батарей</h2>
-          <p class="mt-1 text-xs text-slate-500">SOC, напряжение, общая мощность, токи обоих BMS и баланс ячеек</p>
-        </div>
-        <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-          <p><span class="text-slate-500">SOC:</span> <span id="battery-day-soc" class="font-medium text-white">—</span></p>
-          <p><span class="text-slate-500">Диапазон:</span> <span id="battery-day-range" class="font-medium text-white">—</span></p>
-          <p><span class="text-slate-500">Напряжение:</span> <span id="battery-day-voltage" class="font-medium text-white">—</span></p>
-          <p><span class="text-slate-500">Ток:</span> <span id="battery-day-current" class="font-medium text-white">—</span></p>
-        </div>
-      </div>
-      <div class="grid gap-5 xl:grid-cols-2">
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <h3 class="text-sm font-medium text-slate-300">SOC, мощность и напряжение</h3>
-          <div class="day-chart-wrap mt-3"><canvas id="daily-battery-chart" aria-label="Дневной график аккумулятора"></canvas></div>
-        </div>
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <h3 class="text-sm font-medium text-slate-300">Батарейные модули</h3>
-          <div class="day-chart-wrap mt-3"><canvas id="daily-bms-chart" aria-label="Дневной график BMS"></canvas></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel mb-5 rounded-3xl p-5 sm:p-6">
-      <div class="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 class="font-semibold text-white">Raspberry Pi</h2>
-          <p class="mt-1 text-xs text-slate-500">Состояние системы и объём сохранённой истории · обновление раз в минуту</p>
-        </div>
-        <p id="system-timestamp" class="text-xs text-slate-600">Ожидание системных данных…</p>
-      </div>
-      <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <p class="text-xs uppercase tracking-wider text-slate-600">CPU</p>
-          <p class="mt-2 text-2xl font-semibold"><span id="system-cpu">—</span><span class="ml-1 text-xs text-slate-500">%</span></p>
-        </div>
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <p class="text-xs uppercase tracking-wider text-slate-600">Память</p>
-          <p class="mt-2 text-2xl font-semibold"><span id="system-memory">—</span><span class="ml-1 text-xs text-slate-500">%</span></p>
-        </div>
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <p class="text-xs uppercase tracking-wider text-slate-600">Температура</p>
-          <p class="mt-2 text-2xl font-semibold"><span id="system-temperature">—</span><span class="ml-1 text-xs text-slate-500">°C</span></p>
-        </div>
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <p class="text-xs uppercase tracking-wider text-slate-600">Диск</p>
-          <p class="mt-2 text-2xl font-semibold"><span id="system-disk">—</span><span class="ml-1 text-xs text-slate-500">%</span></p>
-        </div>
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <p class="text-xs uppercase tracking-wider text-slate-600">База данных</p>
-          <p id="system-database" class="mt-2 text-2xl font-semibold">—</p>
-        </div>
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <p class="text-xs uppercase tracking-wider text-slate-600">Uptime</p>
-          <p id="system-uptime" class="mt-2 text-2xl font-semibold">—</p>
-        </div>
-      </div>
-      <div class="grid gap-5 xl:grid-cols-2">
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <h3 class="text-sm font-medium text-slate-300">Ресурсы</h3>
-          <div class="chart-wrap mt-3"><canvas id="system-chart" aria-label="График ресурсов Raspberry Pi"></canvas></div>
-        </div>
-        <div class="rounded-2xl border border-white/5 bg-black/10 p-4">
-          <h3 class="text-sm font-medium text-slate-300">Хранилище и история</h3>
-          <div class="chart-wrap mt-3"><canvas id="storage-chart" aria-label="График размера базы и свободного места"></canvas></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="grid gap-5 xl:grid-cols-5">
-      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-3">
-        <div class="mb-5 flex items-center justify-between gap-4">
-          <div>
-            <h2 class="font-semibold text-white">Генерация и потребление</h2>
-            <p class="mt-1 text-xs text-slate-500">Последние 6 минут · Вт</p>
-          </div>
-          <div class="flex gap-4 text-xs text-slate-400">
-            <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-300"></i>PV</span>
-            <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-sky-400"></i>Нагрузка</span>
-            <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-emerald-400"></i>Батарея (+ заряд)</span>
-            <span><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-violet-400"></i>Сеть</span>
-          </div>
-        </div>
-        <div class="chart-wrap"><canvas id="power-chart" aria-label="График генерации и потребления"></canvas></div>
-      </article>
-
-      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-2">
-        <div class="mb-5">
-          <h2 class="font-semibold text-white">Аккумулятор</h2>
-          <p class="mt-1 text-xs text-slate-500">SOC и напряжение батареи</p>
-        </div>
-        <div class="chart-wrap"><canvas id="battery-chart" aria-label="График аккумулятора"></canvas></div>
-      </article>
-
-      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-3">
-        <div class="mb-5">
-          <h2 class="font-semibold text-white">Напряжение сети</h2>
-          <p class="mt-1 text-xs text-slate-500">L1, L2 и L3 · В</p>
-        </div>
-        <div class="chart-wrap"><canvas id="grid-chart" aria-label="График напряжения сети"></canvas></div>
-      </article>
-
-      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-2">
-        <div class="mb-5">
-          <h2 class="font-semibold text-white">Нагрузка по фазам</h2>
-          <p class="mt-1 text-xs text-slate-500">Текущее распределение · Вт</p>
-        </div>
-        <div class="chart-wrap"><canvas id="phases-chart" aria-label="Нагрузка по фазам"></canvas></div>
-      </article>
-
-      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-3">
-        <div class="mb-5">
-          <h2 class="font-semibold text-white">Солнечные трекеры</h2>
-          <p class="mt-1 text-xs text-slate-500">Мощность и напряжение MPPT1 / MPPT2</p>
-        </div>
-        <div class="chart-wrap"><canvas id="pv-chart" aria-label="График солнечных трекеров"></canvas></div>
-      </article>
-
-      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-2">
-        <div class="mb-5">
-          <h2 class="font-semibold text-white">Температуры</h2>
-          <p class="mt-1 text-xs text-slate-500">Инвертор, DC, трансформатор и BMS · °C</p>
-        </div>
-        <div class="chart-wrap"><canvas id="temperature-chart" aria-label="График температур"></canvas></div>
-      </article>
-
-      <article class="panel rounded-3xl p-5 sm:p-6 xl:col-span-5">
-        <div class="mb-5">
-          <h2 class="font-semibold text-white">Батарейные модули</h2>
-          <p class="mt-1 text-xs text-slate-500">Ток каждого BMS и разброс напряжения ячеек</p>
-        </div>
-        <div class="chart-wrap"><canvas id="bms-chart" aria-label="График батарейных модулей"></canvas></div>
-      </article>
     </section>
   </main>
 
   <script>
+    const $ = (id) => document.getElementById(id);
     const MAX_POINTS = 180;
     const SYSTEM_MAX_POINTS = 360;
-    const state = { lastId: null, lastSystemId: null, analyticsRequest: 0 };
-    const $ = (id) => document.getElementById(id);
-    const optionalNumber = (value) => value === undefined || value === null ? null : Number(value);
-    const apiUrl = (path) => {
-      const basePath = window.location.pathname.endsWith("/")
-        ? window.location.pathname
-        : `${window.location.pathname}/`;
-      return `${basePath}${path}`;
+    const state = {
+      panel: "solar",
+      period: "day",
+      anchor: new Date(),
+      telemetry: [],
+      system: [],
+      lastId: null,
+      lastSystemId: null,
+      analyticsRequest: 0,
+      latest: null,
+      latestSystem: null
     };
-    const formatNumber = (value, digits = 0) => Number(value).toLocaleString("ru-RU", {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits
-    });
-    const timeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", {
-      hour: "2-digit", minute: "2-digit", second: "2-digit"
-    });
-    const shortTimeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", {
-      hour: "2-digit", minute: "2-digit"
-    });
-    const localDateValue = (date = new Date()) => {
+
+    const apiUrl = (path) => new URL(path, window.location.href).toString();
+    const number = (value) => value == null || Number.isNaN(Number(value)) ? null : Number(value);
+    const fmt = (value, digits = 0) => number(value) == null ? "—" : Number(value).toLocaleString("ru-RU", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+    const localDate = (date = new Date()) => {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, "0");
       const day = String(date.getDate()).padStart(2, "0");
       return `${year}-${month}-${day}`;
     };
-    const formatBytes = (bytes) => {
-      if (bytes == null) return "—";
-      const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
-      let value = Number(bytes);
-      let unit = 0;
-      while (Math.abs(value) >= 1024 && unit < units.length - 1) {
-        value /= 1024;
-        unit += 1;
-      }
-      return `${formatNumber(value, unit === 0 ? 0 : 1)} ${units[unit]}`;
-    };
-    const formatDuration = (seconds) => {
-      if (seconds == null) return "—";
-      const days = Math.floor(seconds / 86400);
-      const hours = Math.floor((seconds % 86400) / 3600);
-      return days ? `${days} д ${hours} ч` : `${hours} ч`;
-    };
-
-    Chart.defaults.color = "#64748b";
-    Chart.defaults.borderColor = "rgba(148, 163, 184, 0.08)";
-    Chart.defaults.font.family = "ui-sans-serif, system-ui, sans-serif";
-
-    const commonLineOptions = {
+    const timeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const shortTimeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    const line = (label, color, axis = "y", fill = false) => ({
+      label, data: [], yAxisID: axis, borderColor: color,
+      backgroundColor: fill ? `${color}18` : color, borderWidth: 2,
+      pointRadius: 0, pointHoverRadius: 4, tension: .35, fill
+    });
+    const baseOptions = () => ({
       responsive: true,
       maintainAspectRatio: false,
-      animation: { duration: 350 },
+      animation: { duration: 250 },
       interaction: { intersect: false, mode: "index" },
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 7 } },
-        y: { beginAtZero: false, ticks: { maxTicksLimit: 5 } }
-      }
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 7 } } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { ticks: { maxTicksLimit: 6 } } }
+    });
+
+    Chart.defaults.color = "#82918c";
+    Chart.defaults.borderColor = "rgba(148,163,184,.09)";
+    Chart.defaults.font.family = "ui-sans-serif,system-ui,sans-serif";
+
+    let detailChart = null;
+    let historyChart = new Chart($("history-chart"), { type: "bar", data: { labels: [], datasets: [] }, options: baseOptions() });
+
+    const panelMeta = {
+      solar: { title: "Солнечная генерация", subtitle: "PV1, PV2 и напряжение MPPT · последние минуты", color: "text-amber-300", valueLabel: "текущая мощность" },
+      home: { title: "Потребление дома", subtitle: "Общая нагрузка и три фазы · последние минуты", color: "text-sky-300", valueLabel: "потребляет дом" },
+      battery: { title: "Аккумулятор", subtitle: "SOC, мощность и напряжение · последние минуты", color: "text-emerald-300", valueLabel: "текущий заряд" },
+      grid: { title: "Напряжение сети", subtitle: "Три фазы и импорт/экспорт · последние минуты", color: "text-violet-300", valueLabel: "среднее напряжение" },
+      system: { title: "Загрузка системы", subtitle: "CPU, память, диск и температура · обновление раз в минуту", color: "text-rose-300", valueLabel: "текущая загрузка CPU" }
     };
 
-    const lineDataset = (label, color, fill = false) => ({
-      label,
-      data: [],
-      borderColor: color,
-      backgroundColor: fill ? `${color}18` : color,
-      borderWidth: 2,
-      pointRadius: 0,
-      pointHoverRadius: 4,
-      tension: 0.35,
-      fill
-    });
-
-    const dailyEnergyChart = new Chart($("daily-energy-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        lineDataset("PV, кВт", "#fbbf24", true),
-        lineDataset("Дом, кВт", "#38bdf8"),
-        lineDataset("Батарея, кВт", "#34d399"),
-        lineDataset("Сеть, кВт", "#a78bfa")
-      ]},
-      options: {
-        ...commonLineOptions,
-        animation: { duration: 200 },
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } },
-          y: { beginAtZero: true, ticks: { maxTicksLimit: 7 }, title: { display: true, text: "кВт" } }
-        }
+    function detailSpec() {
+      if (state.panel === "system") {
+        return {
+          rows: state.system,
+          labels: state.system.map((row) => timeLabel(row.timestamp)),
+          datasets: [
+            { ...line("CPU, %", "#fb7185", "percent", true), data: state.system.map((row) => number(row.data.cpu_percent)) },
+            { ...line("Память, %", "#a78bfa", "percent"), data: state.system.map((row) => number(row.data.memory?.percent)) },
+            { ...line("Диск, %", "#fbbf24", "percent"), data: state.system.map((row) => number(row.data.disk?.percent)) },
+            { ...line("Температура, °C", "#38bdf8", "temperature"), data: state.system.map((row) => number(row.data.cpu_temperature_c)) }
+          ],
+          scales: {
+            x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+            percent: { position: "left", min: 0, max: 100, ticks: { maxTicksLimit: 6 } },
+            temperature: { position: "right", suggestedMin: 20, suggestedMax: 90, grid: { display: false }, ticks: { maxTicksLimit: 6 } }
+          }
+        };
       }
-    });
-
-    const dailyBatteryChart = new Chart($("daily-battery-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        { ...lineDataset("SOC, %", "#facc15", true), yAxisID: "soc" },
-        { ...lineDataset("Мощность, кВт", "#34d399"), yAxisID: "power" },
-        { ...lineDataset("Напряжение, В", "#a78bfa"), yAxisID: "voltage" }
-      ]},
-      options: {
-        ...commonLineOptions,
-        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
+      const rows = state.telemetry;
+      const labels = rows.map((row) => timeLabel(row.timestamp));
+      if (state.panel === "solar") return {
+        labels, datasets: [
+          { ...line("PV1, Вт", "#fbbf24", "power", true), data: rows.map((row) => number(row.parsed.pv_power_w?.pv1)) },
+          { ...line("PV2, Вт", "#fb923c", "power"), data: rows.map((row) => number(row.parsed.pv_power_w?.pv2)) },
+          { ...line("MPPT1, В", "#38bdf8", "voltage"), data: rows.map((row) => number(row.parsed.pv_voltage_v?.mppt1)) },
+          { ...line("MPPT2, В", "#a78bfa", "voltage"), data: rows.map((row) => number(row.parsed.pv_voltage_v?.mppt2)) }
+        ], scales: dualScales("power", "Вт", "voltage", "В")
+      };
+      if (state.panel === "home") return {
+        labels, datasets: [
+          { ...line("Всего, Вт", "#38bdf8", "power", true), data: rows.map((row) => number(row.parsed.load_power_w?.total)) },
+          { ...line("L1, Вт", "#34d399", "power"), data: rows.map((row) => number(row.parsed.load_power_w?.l1)) },
+          { ...line("L2, Вт", "#a78bfa", "power"), data: rows.map((row) => number(row.parsed.load_power_w?.l2)) },
+          { ...line("L3, Вт", "#fb7185", "power"), data: rows.map((row) => number(row.parsed.load_power_w?.l3)) }
+        ], scales: singleScale("power", "Вт")
+      };
+      if (state.panel === "battery") return {
+        labels, datasets: [
+          { ...line("SOC, %", "#facc15", "soc", true), data: rows.map((row) => number(row.parsed.soc_percent)) },
+          { ...line("Мощность, кВт", "#34d399", "power"), data: rows.map((row) => number(row.parsed.battery_power_w) / 1000) },
+          { ...line("Напряжение, В", "#a78bfa", "voltage"), data: rows.map((row) => number(row.parsed.battery_voltage_v)) }
+        ],
         scales: {
-          x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
           soc: { position: "left", min: 0, max: 100, ticks: { maxTicksLimit: 6 }, title: { display: true, text: "%" } },
           power: { position: "right", grid: { display: false }, ticks: { maxTicksLimit: 6 }, title: { display: true, text: "кВт" } },
-          voltage: { display: false, min: 45, max: 60 }
+          voltage: { display: false, suggestedMin: 45, suggestedMax: 60 }
         }
-      }
-    });
+      };
+      return {
+        labels, datasets: [
+          { ...line("L1, В", "#a78bfa", "voltage", true), data: rows.map((row) => number(row.parsed.grid_voltage_v?.l1)) },
+          { ...line("L2, В", "#34d399", "voltage"), data: rows.map((row) => number(row.parsed.grid_voltage_v?.l2)) },
+          { ...line("L3, В", "#fb7185", "voltage"), data: rows.map((row) => number(row.parsed.grid_voltage_v?.l3)) },
+          { ...line("Сеть, кВт", "#38bdf8", "power"), data: rows.map((row) => number(row.parsed.grid_power_w?.total) / 1000) }
+        ], scales: dualScales("voltage", "В", "power", "кВт")
+      };
+    }
 
-    const dailyBmsChart = new Chart($("daily-bms-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        { ...lineDataset("BMS 1 ток, А", "#34d399", true), yAxisID: "current" },
-        { ...lineDataset("BMS 2 ток, А", "#38bdf8"), yAxisID: "current" },
-        { ...lineDataset("BMS 1 Δ, мВ", "#fbbf24"), yAxisID: "delta" },
-        { ...lineDataset("BMS 2 Δ, мВ", "#fb7185"), yAxisID: "delta" }
-      ]},
-      options: {
-        ...commonLineOptions,
-        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
-        scales: {
-          x: { grid: { display: false }, ticks: { maxTicksLimit: 10 } },
-          current: { position: "left", ticks: { maxTicksLimit: 6 }, title: { display: true, text: "А" } },
-          delta: { position: "right", beginAtZero: true, grid: { display: false }, ticks: { maxTicksLimit: 6 }, title: { display: true, text: "мВ" } }
-        }
-      }
-    });
+    function singleScale(id, title) {
+      return { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, [id]: { position: "left", ticks: { maxTicksLimit: 6 }, title: { display: true, text: title } } };
+    }
+    function dualScales(leftId, leftTitle, rightId, rightTitle) {
+      return {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+        [leftId]: { position: "left", ticks: { maxTicksLimit: 6 }, title: { display: true, text: leftTitle } },
+        [rightId]: { position: "right", grid: { display: false }, ticks: { maxTicksLimit: 6 }, title: { display: true, text: rightTitle } }
+      };
+    }
 
-    const powerChart = new Chart($("power-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        lineDataset("PV", "#fbbf24", true),
-        lineDataset("Нагрузка", "#38bdf8"),
-        lineDataset("Батарея", "#34d399"),
-        lineDataset("Сеть", "#a78bfa")
-      ]},
-      options: commonLineOptions
-    });
-
-    const batteryChart = new Chart($("battery-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        { ...lineDataset("SOC, %", "#34d399", true), yAxisID: "soc" },
-        { ...lineDataset("Батарея, В", "#a78bfa"), yAxisID: "voltage" }
-      ]},
-      options: {
-        ...commonLineOptions,
-        scales: {
-          x: commonLineOptions.scales.x,
-          soc: { position: "left", min: 35, max: 100, ticks: { maxTicksLimit: 5 } },
-          voltage: { position: "right", min: 49, max: 54, grid: { display: false }, ticks: { maxTicksLimit: 5 } }
-        }
+    function drawDetail(recreate = false) {
+      const meta = panelMeta[state.panel];
+      $("detail-title").textContent = meta.title;
+      $("detail-subtitle").textContent = meta.subtitle;
+      $("detail-value-label").textContent = meta.valueLabel;
+      $("detail-kicker").className = `text-xs font-semibold uppercase tracking-[.2em] ${meta.color}`;
+      const spec = detailSpec();
+      if (detailChart && recreate) { detailChart.destroy(); detailChart = null; }
+      if (!detailChart) {
+        const options = baseOptions();
+        options.scales = spec.scales;
+        detailChart = new Chart($("detail-chart"), { type: "line", data: { labels: spec.labels, datasets: spec.datasets }, options });
+      } else {
+        detailChart.data.labels = spec.labels;
+        detailChart.data.datasets = spec.datasets;
+        detailChart.update("none");
       }
-    });
+      updateDetailValue();
+    }
 
-    const gridChart = new Chart($("grid-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        lineDataset("L1", "#a78bfa"),
-        lineDataset("L2", "#34d399"),
-        lineDataset("L3", "#fb7185")
-      ]},
-      options: {
-        ...commonLineOptions,
-        scales: {
-          x: commonLineOptions.scales.x,
-          y: { min: 224, max: 236, ticks: { maxTicksLimit: 5 } }
-        }
+    function updateDetailValue() {
+      const data = state.latest?.parsed;
+      const system = state.latestSystem?.data;
+      if (state.panel === "solar") $("detail-value").textContent = data ? `${fmt(data.pv_power_w?.total)} Вт` : "—";
+      if (state.panel === "home") $("detail-value").textContent = data ? `${fmt(data.load_power_w?.total)} Вт` : "—";
+      if (state.panel === "battery") $("detail-value").textContent = data ? `${fmt(data.soc_percent)}%` : "—";
+      if (state.panel === "grid") {
+        const grid = data?.grid_voltage_v;
+        $("detail-value").textContent = grid ? `${fmt((grid.l1 + grid.l2 + grid.l3) / 3, 1)} В` : "—";
       }
-    });
-
-    const phasesChart = new Chart($("phases-chart"), {
-      type: "bar",
-      data: {
-        labels: ["L1", "L2", "L3"],
-        datasets: [{
-          data: [0, 0, 0],
-          backgroundColor: ["#38bdf8", "#34d399", "#a78bfa"],
-          borderRadius: 10,
-          borderSkipped: false
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: { duration: 500 },
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { display: false } },
-          y: { beginAtZero: true, suggestedMax: 2000, ticks: { maxTicksLimit: 5 } }
-        }
-      }
-    });
-
-    const pvChart = new Chart($("pv-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        { ...lineDataset("PV1, Вт", "#fbbf24", true), yAxisID: "power" },
-        { ...lineDataset("PV2, Вт", "#fb923c"), yAxisID: "power" },
-        { ...lineDataset("MPPT1, В", "#38bdf8"), yAxisID: "voltage" },
-        { ...lineDataset("MPPT2, В", "#a78bfa"), yAxisID: "voltage" }
-      ]},
-      options: {
-        ...commonLineOptions,
-        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
-        scales: {
-          x: commonLineOptions.scales.x,
-          power: { position: "left", beginAtZero: true, ticks: { maxTicksLimit: 5 } },
-          voltage: { position: "right", beginAtZero: false, grid: { display: false }, ticks: { maxTicksLimit: 5 } }
-        }
-      }
-    });
-
-    const temperatureChart = new Chart($("temperature-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        lineDataset("Инвертор", "#fb7185"),
-        lineDataset("DC", "#fbbf24"),
-        lineDataset("Трансформатор", "#a78bfa"),
-        lineDataset("BMS 1", "#34d399"),
-        lineDataset("BMS 2", "#38bdf8")
-      ]},
-      options: {
-        ...commonLineOptions,
-        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } }
-      }
-    });
-
-    const bmsChart = new Chart($("bms-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        { ...lineDataset("BMS 1 ток, А", "#34d399", true), yAxisID: "current" },
-        { ...lineDataset("BMS 2 ток, А", "#38bdf8"), yAxisID: "current" },
-        { ...lineDataset("BMS 1 Δ ячеек, мВ", "#fbbf24"), yAxisID: "delta" },
-        { ...lineDataset("BMS 2 Δ ячеек, мВ", "#fb7185"), yAxisID: "delta" }
-      ]},
-      options: {
-        ...commonLineOptions,
-        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
-        scales: {
-          x: commonLineOptions.scales.x,
-          current: { position: "left", beginAtZero: true, ticks: { maxTicksLimit: 5 } },
-          delta: { position: "right", beginAtZero: true, grid: { display: false }, ticks: { maxTicksLimit: 5 } }
-        }
-      }
-    });
-
-    const systemChart = new Chart($("system-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        { ...lineDataset("CPU, %", "#38bdf8", true), yAxisID: "percent" },
-        { ...lineDataset("Память, %", "#a78bfa"), yAxisID: "percent" },
-        { ...lineDataset("Диск, %", "#fbbf24"), yAxisID: "percent" },
-        { ...lineDataset("Температура, °C", "#fb7185"), yAxisID: "temperature" }
-      ]},
-      options: {
-        ...commonLineOptions,
-        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
-        scales: {
-          x: commonLineOptions.scales.x,
-          percent: { position: "left", min: 0, max: 100, ticks: { maxTicksLimit: 5 } },
-          temperature: { position: "right", min: 20, max: 90, grid: { display: false }, ticks: { maxTicksLimit: 5 } }
-        }
-      }
-    });
-
-    const storageChart = new Chart($("storage-chart"), {
-      type: "line",
-      data: { labels: [], datasets: [
-        { ...lineDataset("База, МБ", "#34d399", true), yAxisID: "database" },
-        { ...lineDataset("Свободно, ГБ", "#38bdf8"), yAxisID: "free" }
-      ]},
-      options: {
-        ...commonLineOptions,
-        plugins: { legend: { display: true, labels: { usePointStyle: true, boxWidth: 7 } } },
-        scales: {
-          x: commonLineOptions.scales.x,
-          database: { position: "left", beginAtZero: true, ticks: { maxTicksLimit: 5 } },
-          free: { position: "right", beginAtZero: true, grid: { display: false }, ticks: { maxTicksLimit: 5 } }
-        }
-      }
-    });
+      if (state.panel === "system") $("detail-value").textContent = system ? `${fmt(system.cpu_percent, 1)}%` : "—";
+    }
 
     function setConnection(ok, message) {
       $("status").textContent = message;
-      $("status-dot").className = ok
-        ? "pulse-dot h-2.5 w-2.5 rounded-full bg-emerald-400"
-        : "h-2.5 w-2.5 rounded-full bg-rose-400";
+      $("status-dot").className = `h-2.5 w-2.5 rounded-full ${ok ? "bg-emerald-400" : "bg-rose-400"}`;
     }
 
     function updateCards(snapshot) {
+      state.latest = snapshot;
       const data = snapshot.parsed;
-      const sourceIsSimulator = snapshot.source === "simulator";
-      $("source-badge").textContent = sourceIsSimulator ? "Режим симуляции" : "Локально · Wi-Fi";
-      $("pv-total").textContent = formatNumber(data.pv_power_w.total);
-      $("pv1").textContent = `${formatNumber(data.pv_power_w.pv1)} Вт`;
-      $("pv2").textContent = `${formatNumber(data.pv_power_w.pv2)} Вт`;
-      const pvVoltage = data.pv_voltage_v;
-      const pvCurrent = data.pv_current_a;
-      $("pv-electric").textContent = pvVoltage && pvCurrent
-        ? `MPPT1 ${formatNumber(pvVoltage.mppt1, 1)} В / ${formatNumber(pvCurrent.mppt1, 1)} А · MPPT2 ${formatNumber(pvVoltage.mppt2, 1)} В / ${formatNumber(pvCurrent.mppt2, 1)} А`
-        : "Напряжение и ток появятся в новых снимках";
-      $("load-total").textContent = formatNumber(data.load_power_w.total);
-      $("soc").textContent = formatNumber(data.soc_percent);
-      $("soc-bar").style.width = `${data.soc_percent}%`;
-      $("battery-voltage").textContent = formatNumber(data.battery_voltage_v, 1);
-      const batteryPower = Number(data.battery_power_w || 0);
-      $("battery-power").textContent = batteryPower > 0
-        ? `заряд ${formatNumber(batteryPower)} Вт`
-        : batteryPower < 0
-          ? `разряд ${formatNumber(Math.abs(batteryPower))} Вт`
-          : "ожидание";
-
+      $("pv-total").textContent = fmt(data.pv_power_w?.total);
+      $("pv-detail").textContent = `PV1 ${fmt(data.pv_power_w?.pv1)} · PV2 ${fmt(data.pv_power_w?.pv2)} Вт`;
+      $("load-total").textContent = fmt(data.load_power_w?.total);
+      $("load-detail").textContent = `L1 ${fmt(data.load_power_w?.l1)} · L2 ${fmt(data.load_power_w?.l2)} · L3 ${fmt(data.load_power_w?.l3)} Вт`;
+      $("soc").textContent = fmt(data.soc_percent);
+      const battery = number(data.battery_power_w) || 0;
+      const batteryMode = battery > 0 ? `заряд ${fmt(battery)} Вт` : battery < 0 ? `разряд ${fmt(Math.abs(battery))} Вт` : "ожидание";
+      $("battery-detail").textContent = `${fmt(data.battery_voltage_v, 1)} В · ${batteryMode}`;
       const grid = data.grid_voltage_v;
-      $("grid-average").textContent = formatNumber((grid.l1 + grid.l2 + grid.l3) / 3, 1);
-      const gridPower = Number(data.grid_power_w?.total || 0);
-      $("grid-power").textContent = gridPower > 0
-        ? `импорт ${formatNumber(gridPower)} Вт`
-        : gridPower < 0
-          ? `экспорт ${formatNumber(Math.abs(gridPower))} Вт`
-          : "0 Вт";
-      const phases = data.load_power_w;
-      $("energy-balance").textContent = `L1 ${formatNumber(phases.l1)} · L2 ${formatNumber(phases.l2)} · L3 ${formatNumber(phases.l3)} Вт`;
-      $("inverter-output").textContent = `Инвертор ${formatNumber(data.inverter_power_w?.total || 0)} Вт · резерв ${formatNumber(data.backup_power_w?.total || 0)} Вт`;
-      $("grid-frequency").textContent = data.grid_frequency_hz == null ? "—" : formatNumber(data.grid_frequency_hz, 2);
-      const batteries = data.batteries || [];
-      $("bms-summary").textContent = batteries.length
-        ? `${batteries.length} BMS · Δ ячеек ${batteries.map((battery) => `${formatNumber(battery.cell_delta_mv, 0)} мВ`).join(" / ")}`
-        : "BMS-модули появятся в новых снимках";
-
-      phasesChart.data.datasets[0].data = [
-        data.load_power_w.l1, data.load_power_w.l2, data.load_power_w.l3
-      ];
-      phasesChart.update();
+      $("grid-average").textContent = grid ? fmt((grid.l1 + grid.l2 + grid.l3) / 3, 1) : "—";
+      const gridPower = number(data.grid_power_w?.total) || 0;
+      const gridMode = gridPower > 0 ? `импорт ${fmt(gridPower)} Вт` : gridPower < 0 ? `экспорт ${fmt(Math.abs(gridPower))} Вт` : "обмен 0 Вт";
+      $("grid-detail").textContent = `${gridMode} · ${fmt(data.grid_frequency_hz, 2)} Гц`;
       $("timestamp").textContent = `Обновлено ${new Date(snapshot.timestamp).toLocaleString("ru-RU")}`;
+      updateDetailValue();
     }
 
-    function pushSnapshot(snapshot, animate = true) {
-      const label = timeLabel(snapshot.timestamp);
-      const data = snapshot.parsed;
-      const charts = [powerChart, batteryChart, gridChart, pvChart, temperatureChart, bmsChart];
-      charts.forEach((chart) => chart.data.labels.push(label));
+    function updateSystem(snapshot) {
+      state.latestSystem = snapshot;
+      const data = snapshot.data;
+      $("system-cpu").textContent = fmt(data.cpu_percent, 1);
+      $("system-detail").textContent = `RAM ${fmt(data.memory?.percent, 1)}% · ${fmt(data.cpu_temperature_c, 1)} °C · диск ${fmt(data.disk?.percent, 1)}%`;
+      updateDetailValue();
+    }
 
-      powerChart.data.datasets[0].data.push(data.pv_power_w.total);
-      powerChart.data.datasets[1].data.push(data.load_power_w.total);
-      powerChart.data.datasets[2].data.push(Number(data.battery_power_w || 0));
-      powerChart.data.datasets[3].data.push(optionalNumber(data.grid_power_w?.total));
-      batteryChart.data.datasets[0].data.push(data.soc_percent);
-      batteryChart.data.datasets[1].data.push(data.battery_voltage_v);
-      gridChart.data.datasets[0].data.push(data.grid_voltage_v.l1);
-      gridChart.data.datasets[1].data.push(data.grid_voltage_v.l2);
-      gridChart.data.datasets[2].data.push(data.grid_voltage_v.l3);
+    function selectPanel(panel) {
+      state.panel = panel;
+      document.querySelectorAll(".summary-card").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.panel === panel)));
+      drawDetail(true);
+    }
 
-      pvChart.data.datasets[0].data.push(optionalNumber(data.pv_power_w?.pv1));
-      pvChart.data.datasets[1].data.push(optionalNumber(data.pv_power_w?.pv2));
-      pvChart.data.datasets[2].data.push(optionalNumber(data.pv_voltage_v?.mppt1));
-      pvChart.data.datasets[3].data.push(optionalNumber(data.pv_voltage_v?.mppt2));
+    function pushTelemetry(snapshot) {
+      if (state.telemetry.some((row) => row.id === snapshot.id)) return;
+      state.telemetry.push(snapshot);
+      if (state.telemetry.length > MAX_POINTS) state.telemetry.shift();
+      if (state.panel !== "system") drawDetail();
+    }
 
-      temperatureChart.data.datasets[0].data.push(optionalNumber(data.temperature_c?.inverter));
-      temperatureChart.data.datasets[1].data.push(optionalNumber(data.temperature_c?.dc));
-      temperatureChart.data.datasets[2].data.push(optionalNumber(data.temperature_c?.transformer));
-      temperatureChart.data.datasets[3].data.push(optionalNumber(data.batteries?.[0]?.temperature_c?.max));
-      temperatureChart.data.datasets[4].data.push(optionalNumber(data.batteries?.[1]?.temperature_c?.max));
+    function pushSystem(snapshot) {
+      if (state.system.some((row) => row.id === snapshot.id)) return;
+      state.system.push(snapshot);
+      if (state.system.length > SYSTEM_MAX_POINTS) state.system.shift();
+      if (state.panel === "system") drawDetail();
+    }
 
-      bmsChart.data.datasets[0].data.push(optionalNumber(data.batteries?.[0]?.current_a));
-      bmsChart.data.datasets[1].data.push(optionalNumber(data.batteries?.[1]?.current_a));
-      bmsChart.data.datasets[2].data.push(optionalNumber(data.batteries?.[0]?.cell_delta_mv));
-      bmsChart.data.datasets[3].data.push(optionalNumber(data.batteries?.[1]?.cell_delta_mv));
+    function periodRange() {
+      const anchor = new Date(state.anchor);
+      anchor.setHours(12, 0, 0, 0);
+      if (state.period === "day") return { start: new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate()), end: new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + 1) };
+      if (state.period === "week") {
+        const mondayOffset = (anchor.getDay() + 6) % 7;
+        const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - mondayOffset);
+        return { start, end: new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7) };
+      }
+      if (state.period === "month") {
+        const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+        return { start, end: new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1) };
+      }
+      return { start: null, end: null };
+    }
 
-      charts.forEach((chart) => {
-        while (chart.data.labels.length > MAX_POINTS) {
-          chart.data.labels.shift();
-          chart.data.datasets.forEach((dataset) => dataset.data.shift());
-        }
-        chart.update(animate ? undefined : "none");
+    function updatePeriodControls() {
+      document.querySelectorAll(".period-button").forEach((button) => {
+        const active = button.dataset.period === state.period;
+        button.setAttribute("aria-pressed", String(active));
+        button.className = `period-button flex-1 rounded-lg px-3 py-2 text-sm ${active ? "bg-white/10 text-white" : "text-slate-500"}`;
       });
+      const range = periodRange();
+      const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+      if (state.period === "day") $("period-label").textContent = dateFormat.format(range.start);
+      if (state.period === "week") $("period-label").textContent = `${dateFormat.format(range.start)} — ${dateFormat.format(new Date(range.end.getTime() - 86400000))}`;
+      if (state.period === "month") $("period-label").textContent = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }).format(range.start);
+      if (state.period === "all") $("period-label").textContent = "Вся история";
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      $("previous-period").disabled = state.period === "all";
+      $("next-period").disabled = state.period === "all" || (range.start && range.start >= today);
+      $("current-period").disabled = state.period === "all";
     }
 
-    function setChartData(chart, labels, series) {
-      chart.data.labels = labels;
-      chart.data.datasets.forEach((dataset, index) => {
-        dataset.data = series[index] || [];
-      });
-      chart.update("none");
+    function shiftPeriod(direction) {
+      const next = new Date(state.anchor);
+      if (state.period === "day") next.setDate(next.getDate() + direction);
+      if (state.period === "week") next.setDate(next.getDate() + direction * 7);
+      if (state.period === "month") next.setMonth(next.getMonth() + direction);
+      if (next > new Date()) return;
+      state.anchor = next;
+      updatePeriodControls();
+      loadHistoryAnalytics();
     }
 
-    function selectedDayBounds() {
-      const [year, month, day] = $("history-date").value.split("-").map(Number);
-      const start = new Date(year, month - 1, day);
-      const end = new Date(year, month - 1, day + 1);
-      return { start, end };
+    function updateStats(stats) {
+      $("stat-pv").textContent = fmt(stats.pv_kwh || 0, 2);
+      $("stat-load").textContent = fmt(stats.load_kwh || 0, 2);
+      $("stat-import").textContent = fmt(stats.grid_import_kwh || 0, 2);
+      $("stat-export").textContent = fmt(stats.grid_export_kwh || 0, 2);
+      $("stat-charge").textContent = fmt(stats.battery_charge_kwh || 0, 2);
+      $("stat-discharge").textContent = fmt(stats.battery_discharge_kwh || 0, 2);
+      $("stat-self").textContent = fmt(stats.self_consumption_percent || 0, 0);
     }
 
-    function updateDayNavigation() {
-      const today = localDateValue();
-      $("history-date").max = today;
-      $("next-day").disabled = $("history-date").value >= today;
-      $("next-day").classList.toggle("opacity-30", $("next-day").disabled);
-      $("next-day").classList.toggle("cursor-not-allowed", $("next-day").disabled);
-    }
-
-    function shiftSelectedDay(offset) {
-      const date = new Date(`${$("history-date").value}T12:00:00`);
-      date.setDate(date.getDate() + offset);
-      const nextValue = localDateValue(date);
-      if (nextValue > localDateValue()) return;
-      $("history-date").value = nextValue;
-      updateDayNavigation();
-      loadDailyAnalytics();
-    }
-
-    function updateDailyAnalytics(payload) {
-      const stats = payload.stats;
-      const points = payload.points;
-      const labels = points.map((point) => shortTimeLabel(point.timestamp));
-      const energy = (value) => formatNumber(value || 0, 2);
-
-      $("stat-pv").textContent = energy(stats.pv_kwh);
-      $("stat-load").textContent = energy(stats.load_kwh);
-      $("stat-import").textContent = energy(stats.grid_import_kwh);
-      $("stat-export").textContent = energy(stats.grid_export_kwh);
-      $("stat-charge").textContent = energy(stats.battery_charge_kwh);
-      $("stat-discharge").textContent = energy(stats.battery_discharge_kwh);
-      $("stat-self").textContent = formatNumber(stats.self_consumption_percent || 0, 0);
-
-      setChartData(dailyEnergyChart, labels, [
-        points.map((point) => point.pv_w / 1000),
-        points.map((point) => point.load_w / 1000),
-        points.map((point) => point.battery_w / 1000),
-        points.map((point) => point.grid_w / 1000)
-      ]);
-      setChartData(dailyBatteryChart, labels, [
-        points.map((point) => point.soc_percent),
-        points.map((point) => point.battery_w / 1000),
-        points.map((point) => point.battery_voltage_v)
-      ]);
-      setChartData(dailyBmsChart, labels, [
-        points.map((point) => point.bms1_current_a),
-        points.map((point) => point.bms2_current_a),
-        points.map((point) => point.bms1_delta_mv),
-        points.map((point) => point.bms2_delta_mv)
-      ]);
-
-      const latest = points[points.length - 1];
-      $("battery-day-soc").textContent = stats.soc_end_percent == null
-        ? "—"
-        : `${formatNumber(stats.soc_start_percent, 0)} → ${formatNumber(stats.soc_end_percent, 0)}%`;
-      $("battery-day-range").textContent = stats.soc_min_percent == null
-        ? "—"
-        : `${formatNumber(stats.soc_min_percent, 0)}–${formatNumber(stats.soc_max_percent, 0)}%`;
-      $("battery-day-voltage").textContent = latest ? `${formatNumber(latest.battery_voltage_v, 1)} В` : "—";
-      $("battery-day-current").textContent = latest ? `${formatNumber(latest.battery_current_a, 1)} А` : "—";
-
-      if (!payload.sample_count) {
-        $("day-status").textContent = "За этот день сохранённых данных пока нет";
+    function drawHistory(payload) {
+      updateStats(payload.stats);
+      const points = payload.points || [];
+      const dayMode = state.period === "day";
+      historyChart.destroy();
+      if (dayMode) {
+        historyChart = new Chart($("history-chart"), {
+          type: "line",
+          data: {
+            labels: points.map((point) => shortTimeLabel(point.timestamp)),
+            datasets: [
+              { ...line("PV, кВт", "#fbbf24", "power", true), data: points.map((point) => point.pv_w / 1000) },
+              { ...line("Дом, кВт", "#38bdf8", "power"), data: points.map((point) => point.load_w / 1000) },
+              { ...line("Батарея, кВт", "#34d399", "power"), data: points.map((point) => point.battery_w / 1000) },
+              { ...line("Сеть, кВт", "#a78bfa", "power"), data: points.map((point) => point.grid_w / 1000) }
+            ]
+          },
+          options: { ...baseOptions(), scales: singleScale("power", "кВт") }
+        });
+        $("history-status").textContent = payload.sample_count ? `${fmt(payload.sample_count)} снимков · учтено ${fmt(payload.integrated_seconds / 3600, 1)} ч без длинных разрывов` : "За этот день сохранённых данных пока нет";
       } else {
-        const coveredHours = payload.integrated_seconds / 3600;
-        $("day-status").textContent = `${formatNumber(payload.sample_count)} снимков · учтено ${formatNumber(coveredHours, 1)} ч без разрывов связи`;
+        const bar = (label, color, key) => ({ label, data: points.map((point) => point[key]), backgroundColor: `${color}b8`, borderColor: color, borderWidth: 1, borderRadius: 5 });
+        historyChart = new Chart($("history-chart"), {
+          type: "bar",
+          data: {
+            labels: points.map((point) => point.label),
+            datasets: [bar("PV", "#fbbf24", "pv_kwh"), bar("Дом", "#38bdf8", "load_kwh"), bar("Из сети", "#a78bfa", "grid_import_kwh"), bar("В сеть", "#f472b6", "grid_export_kwh")]
+          },
+          options: { ...baseOptions(), scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { beginAtZero: true, title: { display: true, text: "кВт·ч" }, ticks: { maxTicksLimit: 6 } } } }
+        });
+        const count = Number(payload.day_count || 0);
+        const dayWord = count % 10 === 1 && count % 100 !== 11 ? "день" : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20) ? "дня" : "дней";
+        $("history-status").textContent = count ? `${fmt(count)} ${dayWord} с сохранёнными показаниями` : "За этот период сохранённых данных пока нет";
       }
     }
 
-    async function loadDailyAnalytics() {
+    async function loadHistoryAnalytics() {
       const requestId = ++state.analyticsRequest;
-      $("day-status").textContent = "Загрузка дневной истории…";
-      const { start, end } = selectedDayBounds();
-      const query = new URLSearchParams({
-        start: start.toISOString(),
-        end: end.toISOString(),
-        max_points: "720"
-      });
+      $("history-status").textContent = "Загрузка истории…";
       try {
-        const response = await fetch(apiUrl(`api/analytics?${query}`), { cache: "no-store" });
+        let url;
+        if (state.period === "day") {
+          const range = periodRange();
+          const query = new URLSearchParams({ start: range.start.toISOString(), end: range.end.toISOString(), max_points: "720" });
+          url = apiUrl(`api/analytics?${query}`);
+        } else {
+          const query = new URLSearchParams({ period: state.period, anchor: localDate(state.anchor) });
+          url = apiUrl(`api/analytics/period?${query}`);
+        }
+        const response = await fetch(url, { cache: "no-store" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json();
-        if (requestId === state.analyticsRequest) updateDailyAnalytics(payload);
+        if (requestId === state.analyticsRequest) drawHistory(payload);
       } catch (error) {
-        if (requestId === state.analyticsRequest) {
-          $("day-status").textContent = "Не удалось загрузить историю за день";
-        }
+        if (requestId === state.analyticsRequest) $("history-status").textContent = "Не удалось загрузить историю";
       }
     }
 
-    function updateSystemCards(snapshot) {
-      const data = snapshot.data;
-      $("system-cpu").textContent = data.cpu_percent == null ? "—" : formatNumber(data.cpu_percent, 1);
-      $("system-memory").textContent = data.memory?.percent == null ? "—" : formatNumber(data.memory.percent, 1);
-      $("system-temperature").textContent = data.cpu_temperature_c == null ? "—" : formatNumber(data.cpu_temperature_c, 1);
-      $("system-disk").textContent = data.disk?.percent == null ? "—" : formatNumber(data.disk.percent, 1);
-      $("system-database").textContent = formatBytes(data.database_size_bytes);
-      $("system-uptime").textContent = formatDuration(data.uptime_seconds);
-      $("system-timestamp").textContent = `Обновлено ${new Date(snapshot.timestamp).toLocaleString("ru-RU")}`;
-    }
-
-    function pushSystemSnapshot(snapshot, animate = true) {
-      const data = snapshot.data;
-      const label = timeLabel(snapshot.timestamp);
-      const charts = [systemChart, storageChart];
-      charts.forEach((chart) => chart.data.labels.push(label));
-
-      systemChart.data.datasets[0].data.push(optionalNumber(data.cpu_percent));
-      systemChart.data.datasets[1].data.push(optionalNumber(data.memory?.percent));
-      systemChart.data.datasets[2].data.push(optionalNumber(data.disk?.percent));
-      systemChart.data.datasets[3].data.push(optionalNumber(data.cpu_temperature_c));
-      storageChart.data.datasets[0].data.push(
-        data.database_size_bytes == null ? null : Number(data.database_size_bytes) / 1024 / 1024
-      );
-      storageChart.data.datasets[1].data.push(
-        data.disk?.free_bytes == null ? null : Number(data.disk.free_bytes) / 1024 / 1024 / 1024
-      );
-
-      charts.forEach((chart) => {
-        while (chart.data.labels.length > SYSTEM_MAX_POINTS) {
-          chart.data.labels.shift();
-          chart.data.datasets.forEach((dataset) => dataset.data.shift());
-        }
-        chart.update(animate ? undefined : "none");
-      });
-    }
-
-    async function loadHistory() {
+    async function loadTelemetryHistory() {
       const response = await fetch(apiUrl(`api/history?limit=${MAX_POINTS}`), { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const history = await response.json();
-      history.forEach((snapshot) => pushSnapshot(snapshot, false));
-      if (history.length) {
-        const latest = history[history.length - 1];
+      state.telemetry = await response.json();
+      if (state.telemetry.length) {
+        const latest = state.telemetry[state.telemetry.length - 1];
         state.lastId = latest.id;
         updateCards(latest);
-        return latest;
       }
-      return null;
+      drawDetail(true);
     }
 
     async function refreshCurrent() {
@@ -843,36 +510,23 @@
         if (snapshot.id !== state.lastId) {
           state.lastId = snapshot.id;
           updateCards(snapshot);
-          pushSnapshot(snapshot);
+          pushTelemetry(snapshot);
         }
-        const ageSeconds = (Date.now() - new Date(snapshot.timestamp).getTime()) / 1000;
-        setConnection(ageSeconds <= 10, ageSeconds <= 10 ? "Инвертор подключён" : "Данные устарели");
+        const age = (Date.now() - new Date(snapshot.timestamp).getTime()) / 1000;
+        setConnection(age <= 10, age <= 10 ? "Инвертор подключён" : "Данные устарели");
       } catch (error) {
         setConnection(false, error.message === "HTTP 404" ? "Ожидание данных" : "Нет связи с API");
       }
-    }
-
-    async function start() {
-      try {
-        const latest = await loadHistory();
-        const ageSeconds = latest ? (Date.now() - new Date(latest.timestamp).getTime()) / 1000 : Infinity;
-        setConnection(ageSeconds <= 10, ageSeconds <= 10 ? "Инвертор подключён" : "Данные устарели");
-      } catch (error) {
-        setConnection(false, error.message === "HTTP 404" ? "Ожидание данных" : "Нет связи с API");
-      }
-      await refreshCurrent();
-      setInterval(refreshCurrent, 2000);
     }
 
     async function loadSystemHistory() {
       const response = await fetch(apiUrl(`api/system/history?limit=${SYSTEM_MAX_POINTS}`), { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const history = await response.json();
-      history.forEach((snapshot) => pushSystemSnapshot(snapshot, false));
-      if (history.length) {
-        const latest = history[history.length - 1];
+      state.system = await response.json();
+      if (state.system.length) {
+        const latest = state.system[state.system.length - 1];
         state.lastSystemId = latest.id;
-        updateSystemCards(latest);
+        updateSystem(latest);
       }
     }
 
@@ -883,46 +537,34 @@
         const snapshot = await response.json();
         if (snapshot.id !== state.lastSystemId) {
           state.lastSystemId = snapshot.id;
-          updateSystemCards(snapshot);
-          pushSystemSnapshot(snapshot);
+          updateSystem(snapshot);
+          pushSystem(snapshot);
         }
       } catch (error) {
-        $("system-timestamp").textContent = error.message === "HTTP 404"
-          ? "Ожидание первого системного снимка"
-          : "Нет системных данных";
+        $("system-detail").textContent = error.message === "HTTP 404" ? "Ожидание системных данных" : "Нет системных данных";
       }
     }
 
-    async function startSystem() {
-      try {
-        await loadSystemHistory();
-      } catch (error) {
-        $("system-timestamp").textContent = "Ожидание системных данных";
-      }
-      await refreshSystem();
+    document.querySelectorAll(".summary-card").forEach((button) => button.addEventListener("click", () => selectPanel(button.dataset.panel)));
+    document.querySelectorAll(".period-button").forEach((button) => button.addEventListener("click", () => {
+      state.period = button.dataset.period;
+      updatePeriodControls();
+      loadHistoryAnalytics();
+    }));
+    $("previous-period").addEventListener("click", () => shiftPeriod(-1));
+    $("next-period").addEventListener("click", () => shiftPeriod(1));
+    $("current-period").addEventListener("click", () => { state.anchor = new Date(); updatePeriodControls(); loadHistoryAnalytics(); });
+
+    async function start() {
+      updatePeriodControls();
+      drawDetail(true);
+      await Promise.allSettled([loadTelemetryHistory(), loadSystemHistory(), loadHistoryAnalytics()]);
+      await Promise.allSettled([refreshCurrent(), refreshSystem()]);
+      setInterval(refreshCurrent, 2000);
       setInterval(refreshSystem, 60000);
+      setInterval(() => { if (state.period === "day" && localDate(state.anchor) === localDate()) loadHistoryAnalytics(); }, 60000);
     }
-
-    $("history-date").value = localDateValue();
-    updateDayNavigation();
-    $("history-date").addEventListener("change", () => {
-      updateDayNavigation();
-      loadDailyAnalytics();
-    });
-    $("previous-day").addEventListener("click", () => shiftSelectedDay(-1));
-    $("next-day").addEventListener("click", () => shiftSelectedDay(1));
-    $("today-day").addEventListener("click", () => {
-      $("history-date").value = localDateValue();
-      updateDayNavigation();
-      loadDailyAnalytics();
-    });
-
     start();
-    startSystem();
-    loadDailyAnalytics();
-    setInterval(() => {
-      if ($("history-date").value === localDateValue()) loadDailyAnalytics();
-    }, 60000);
   </script>
 </body>
 </html>

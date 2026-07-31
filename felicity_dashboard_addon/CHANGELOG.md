@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Five interactive summary cards with one focused detail chart.
+- History periods for day, week, month, and all saved data.
+- Persistent daily energy aggregates for fast long-range statistics.
+
 ## 0.3.0
 
 - Daily history navigation with local-date boundaries.

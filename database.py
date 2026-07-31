@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -5,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import DB_PATH
+from analytics import build_daily_aggregates, daily_increment
 
 
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -26,6 +29,35 @@ def initialize_database(db_path: Path = DB_PATH) -> None:
                 source TEXT NOT NULL,
                 raw_data_json TEXT NOT NULL,
                 parsed_data_json TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS energy_daily (
+                day TEXT PRIMARY KEY,
+                pv_wh REAL NOT NULL DEFAULT 0,
+                load_wh REAL NOT NULL DEFAULT 0,
+                grid_import_wh REAL NOT NULL DEFAULT 0,
+                grid_export_wh REAL NOT NULL DEFAULT 0,
+                battery_charge_wh REAL NOT NULL DEFAULT 0,
+                battery_discharge_wh REAL NOT NULL DEFAULT 0,
+                integrated_seconds REAL NOT NULL DEFAULT 0,
+                sample_count INTEGER NOT NULL DEFAULT 0,
+                soc_start_percent REAL,
+                soc_end_percent REAL,
+                soc_min_percent REAL,
+                soc_max_percent REAL,
+                first_timestamp TEXT,
+                last_timestamp TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dashboard_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             )
             """
         )
@@ -71,6 +103,14 @@ def save_telemetry_snapshot(
 ) -> int:
     timestamp = timestamp or datetime.now(timezone.utc)
     with connect(db_path) as connection:
+        previous_row = connection.execute(
+            """
+            SELECT timestamp, parsed_data_json
+            FROM telemetry_snapshots
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        ).fetchone()
         cursor = connection.execute(
             """
             INSERT INTO telemetry_snapshots
@@ -84,7 +124,110 @@ def save_telemetry_snapshot(
                 json.dumps(parsed_data, ensure_ascii=False),
             ),
         )
+        previous = None if previous_row is None else {
+            "timestamp": previous_row["timestamp"],
+            "parsed": json.loads(previous_row["parsed_data_json"]),
+        }
+        current = {"timestamp": timestamp.isoformat(), "parsed": parsed_data}
+        _upsert_energy_daily(connection, daily_increment(previous, current))
         return int(cursor.lastrowid)
+
+
+def _upsert_energy_daily(connection: sqlite3.Connection, data: dict) -> None:
+    connection.execute(
+        """
+        INSERT INTO energy_daily (
+            day, pv_wh, load_wh, grid_import_wh, grid_export_wh,
+            battery_charge_wh, battery_discharge_wh, integrated_seconds,
+            sample_count, soc_start_percent, soc_end_percent,
+            soc_min_percent, soc_max_percent, first_timestamp, last_timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(day) DO UPDATE SET
+            pv_wh = energy_daily.pv_wh + excluded.pv_wh,
+            load_wh = energy_daily.load_wh + excluded.load_wh,
+            grid_import_wh = energy_daily.grid_import_wh + excluded.grid_import_wh,
+            grid_export_wh = energy_daily.grid_export_wh + excluded.grid_export_wh,
+            battery_charge_wh = energy_daily.battery_charge_wh + excluded.battery_charge_wh,
+            battery_discharge_wh = energy_daily.battery_discharge_wh + excluded.battery_discharge_wh,
+            integrated_seconds = energy_daily.integrated_seconds + excluded.integrated_seconds,
+            sample_count = energy_daily.sample_count + excluded.sample_count,
+            soc_start_percent = COALESCE(energy_daily.soc_start_percent, excluded.soc_start_percent),
+            soc_end_percent = excluded.soc_end_percent,
+            soc_min_percent = CASE
+                WHEN energy_daily.soc_min_percent IS NULL THEN excluded.soc_min_percent
+                WHEN excluded.soc_min_percent IS NULL THEN energy_daily.soc_min_percent
+                ELSE MIN(energy_daily.soc_min_percent, excluded.soc_min_percent)
+            END,
+            soc_max_percent = CASE
+                WHEN energy_daily.soc_max_percent IS NULL THEN excluded.soc_max_percent
+                WHEN excluded.soc_max_percent IS NULL THEN energy_daily.soc_max_percent
+                ELSE MAX(energy_daily.soc_max_percent, excluded.soc_max_percent)
+            END,
+            first_timestamp = COALESCE(energy_daily.first_timestamp, excluded.first_timestamp),
+            last_timestamp = excluded.last_timestamp
+        """,
+        (
+            data["day"], data["pv_wh"], data["load_wh"],
+            data["grid_import_wh"], data["grid_export_wh"],
+            data["battery_charge_wh"], data["battery_discharge_wh"],
+            data["integrated_seconds"], data["sample_count"],
+            data["soc_start_percent"], data["soc_end_percent"],
+            data["soc_min_percent"], data["soc_max_percent"],
+            data["first_timestamp"], data["last_timestamp"],
+        ),
+    )
+
+
+def ensure_energy_daily(db_path: Path = DB_PATH) -> None:
+    """Backfill daily aggregates once for databases created before v0.4."""
+    with connect(db_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        migration = connection.execute(
+            "SELECT value FROM dashboard_meta WHERE key = ?",
+            ("energy_daily_backfill_v1",),
+        ).fetchone()
+        if migration is not None:
+            return
+        connection.execute("DELETE FROM energy_daily")
+        rows = connection.execute(
+            """
+            SELECT timestamp, parsed_data_json
+            FROM telemetry_snapshots
+            ORDER BY timestamp ASC, id ASC
+            """
+        ).fetchall()
+        telemetry = [
+            {"timestamp": row["timestamp"], "parsed": json.loads(row["parsed_data_json"])}
+            for row in rows
+        ]
+        for aggregate in build_daily_aggregates(telemetry):
+            _upsert_energy_daily(connection, aggregate)
+        connection.execute(
+            "INSERT INTO dashboard_meta (key, value) VALUES (?, ?)",
+            ("energy_daily_backfill_v1", datetime.now(timezone.utc).isoformat()),
+        )
+
+
+def get_energy_daily(
+    start_day: str | None = None,
+    end_day: str | None = None,
+    db_path: Path = DB_PATH,
+) -> list[dict]:
+    clauses = []
+    parameters: list[str] = []
+    if start_day is not None:
+        clauses.append("day >= ?")
+        parameters.append(start_day)
+    if end_day is not None:
+        clauses.append("day < ?")
+        parameters.append(end_day)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            f"SELECT * FROM energy_daily {where} ORDER BY day ASC",
+            parameters,
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def serialize_telemetry_row(row: sqlite3.Row) -> dict:
