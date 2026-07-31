@@ -129,15 +129,20 @@ Linux. На **Home Assistant OS** используйте приложение и
 умолчанию отключён. База хранится в постоянном `/data` и включается в резервную
 копию приложения.
 
-Для установки тестовой ветки добавьте в магазине приложений репозиторий:
+Добавьте в магазине приложений обычный HTTPS URL репозитория:
 
 ```text
-https://github.com/okiyashko1337/felicity-dashboard#agent/live-wifi-dashboard
+https://github.com/okiyashko1337/felicity-dashboard
 ```
 
-Обновите список, установите **Felicity Energy Dashboard**, проверьте IP
-`192.168.1.135` на вкладке конфигурации и запустите приложение. Затем включите
-**Show in sidebar** и откройте **Felicity Energy**.
+В актуальном английском интерфейсе путь выглядит так: **Settings → Apps → App
+store → ⋮ → Repositories**. В версиях, где ещё используется прежнее название:
+**Settings → Add-ons → Add-on Store → ⋮ → Repositories**.
+
+После добавления репозитория обновите список, установите **Felicity Energy
+Dashboard**, проверьте `inverter_host: 192.168.1.135` на вкладке
+**Configuration** и запустите приложение. Затем включите **Show in sidebar** и
+откройте **Felicity Energy**.
 
 ## Старый Modbus-вариант
 
