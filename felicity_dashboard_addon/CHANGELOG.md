@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- Gap statistics with coverage, gap count, and longest missing interval.
+- Dashed, translucent bridges make missing telemetry visible on line charts.
+- Missing days remain empty and are marked explicitly in period charts.
+
 ## 0.6.1
 
 - PV-to-consumption energy coverage for the selected history period.

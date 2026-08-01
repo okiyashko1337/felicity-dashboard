@@ -27,7 +27,7 @@ from database import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-UI_VERSION = "0.6.1"
+UI_VERSION = "0.7.0"
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
@@ -105,7 +105,12 @@ def analytics(
         raise HTTPException(status_code=422, detail="range cannot exceed 36 hours")
     try:
         rows = get_telemetry_range(start, end, DB_PATH)
-        result = build_energy_analytics(rows, max_points=max_points)
+        result = build_energy_analytics(
+            rows,
+            max_points=max_points,
+            range_start=start,
+            range_end=end,
+        )
     except sqlite3.Error as error:
         raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
     return {
@@ -136,7 +141,12 @@ def analytics_period(
             end.isoformat() if end else None,
             DB_PATH,
         )
-        result = build_period_analytics(rows, group_by_month=period == "all")
+        result = build_period_analytics(
+            rows,
+            group_by_month=period == "all",
+            start_day=start if start else (date.fromisoformat(rows[0]["day"]) if rows else None),
+            end_day=end if end else (date.fromisoformat(rows[-1]["day"]) + timedelta(days=1) if rows else None),
+        )
     except sqlite3.Error as error:
         raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
     return {

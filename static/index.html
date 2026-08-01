@@ -95,7 +95,7 @@
   <main class="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-9">
     <header class="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p class="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">Felicity IVGM · UI 0.6.1</p>
+        <p class="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">Felicity IVGM · UI 0.7.0</p>
         <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Энергия дома</h1>
         <p class="mt-2 text-sm text-slate-500">Живые данные инвертора и история, которая хранится локально.</p>
       </div>
@@ -148,6 +148,7 @@
           <p id="detail-kicker" class="text-xs font-semibold uppercase tracking-[.2em] text-amber-300">Подробный график</p>
           <h2 id="detail-title" class="mt-1 text-xl font-semibold text-white">Солнечная генерация</h2>
           <p id="detail-subtitle" class="mt-1 text-xs text-slate-500">PV1, PV2 и напряжение MPPT · последние минуты</p>
+          <p class="mt-2 text-xs text-slate-500"><span class="text-slate-400">Статистика разрывов:</span> <span id="detail-gap-status">рассчитывается…</span></p>
         </div>
         <div id="detail-scale" class="detail-scale flex flex-wrap rounded-xl border border-white/10 bg-black/10 p-1" role="group" aria-label="Масштаб подробного графика">
           <button class="rounded-lg px-3 py-2 text-sm text-slate-500" data-detail-scale="15m" aria-pressed="false">15 мин</button>
@@ -169,6 +170,7 @@
           <p class="text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">История</p>
           <h2 class="mt-1 text-xl font-semibold text-white">Сохранённые показания</h2>
           <p id="history-status" class="mt-1 text-xs text-slate-500">Загрузка истории…</p>
+          <p class="mt-2 text-xs text-slate-500"><span class="text-slate-400">Статистика разрывов:</span> <span id="history-gap-status">рассчитывается…</span></p>
         </div>
         <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div id="period-tabs" class="flex rounded-xl border border-white/10 bg-black/10 p-1" role="group" aria-label="Период истории">
@@ -268,7 +270,9 @@
       latest: null,
       latestSystem: null,
       connectionError: null,
-      hiddenSeries: loadHiddenSeries()
+      hiddenSeries: loadHiddenSeries(),
+      detailGapThresholdMs: 10000,
+      detailGapStatistics: null
     };
 
     const apiUrl = (path) => new URL(path, window.location.href).toString();
@@ -282,6 +286,13 @@
     };
     const timeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const shortTimeLabel = (timestamp) => new Date(timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    const formatDuration = (seconds) => {
+      const value = Math.max(0, Number(seconds) || 0);
+      if (value < 60) return `${Math.round(value)} сек`;
+      if (value < 3600) return `${fmt(value / 60, value < 600 ? 1 : 0)} мин`;
+      if (value < 86400) return `${fmt(value / 3600, value < 36000 ? 1 : 0)} ч`;
+      return `${fmt(value / 86400, 1)} дн`;
+    };
     const DETAIL_SCALES = {
       "15m": { durationMs: 15 * 60 * 1000, label: "последние 15 минут" },
       "1h": { durationMs: 60 * 60 * 1000, label: "последний час" },
@@ -313,14 +324,25 @@
         }
       };
     };
-    const detailSeries = (rows, value) => rows.map((row) => ({
-      x: new Date(row.timestamp).getTime(),
-      y: number(value(row))
-    }));
+    const detailSeries = (rows, value) => rows.map((row, index) => {
+      const timestamp = new Date(row.timestamp).getTime();
+      const previousTimestamp = index ? new Date(rows[index - 1].timestamp).getTime() : timestamp;
+      const gapSeconds = Math.max(0, (timestamp - previousTimestamp) / 1000);
+      return {
+        x: timestamp,
+        y: number(value(row)),
+        gapBefore: index > 0 && timestamp - previousTimestamp > state.detailGapThresholdMs,
+        gapSeconds
+      };
+    });
     const line = (label, color, axis = "y", fill = false) => ({
       label, data: [], yAxisID: axis, borderColor: color,
       backgroundColor: fill ? `${color}18` : color, borderWidth: 2,
-      pointRadius: 0, pointHoverRadius: 4, tension: .35, fill
+      pointRadius: 0, pointHoverRadius: 4, tension: .35, fill,
+      segment: {
+        borderDash: (context) => context.p1.raw?.gapBefore ? [7, 6] : undefined,
+        borderColor: (context) => context.p1.raw?.gapBefore ? `${color}70` : color
+      }
     });
     const visibilityKey = (scope, label) => `${scope}:${label}`;
     const applySeriesVisibility = (datasets, scope) => datasets.map((dataset) => ({
@@ -343,12 +365,21 @@
       }
       chart.update();
     }
+    const gapTooltip = (items) => {
+      const gapSeconds = Math.max(...items.map((item) => Number(item.raw?.gapSeconds || 0)));
+      return items.some((item) => item.raw?.gapBefore)
+        ? [`Пунктир: между точками нет данных ${formatDuration(gapSeconds)}`]
+        : [];
+    };
     const baseOptions = () => ({
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 250 },
       interaction: { intersect: false, mode: "index" },
-      plugins: { legend: { onClick: rememberLegendClick, labels: { usePointStyle: true, boxWidth: 7 } } },
+      plugins: {
+        legend: { onClick: rememberLegendClick, labels: { usePointStyle: true, boxWidth: 7 } },
+        tooltip: { callbacks: { afterBody: gapTooltip } }
+      },
       scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { ticks: { maxTicksLimit: 6 } } }
     });
 
@@ -450,10 +481,9 @@
       if (!detailChart) {
         const options = baseOptions();
         options.scales = spec.scales;
-        options.plugins.tooltip = {
-          callbacks: {
-            title: (items) => items.length ? new Date(items[0].parsed.x).toLocaleString("ru-RU") : ""
-          }
+        options.plugins.tooltip.callbacks = {
+          ...options.plugins.tooltip.callbacks,
+          title: (items) => items.length ? new Date(items[0].parsed.x).toLocaleString("ru-RU") : ""
         };
         detailChart = new Chart($("detail-chart"), { type: "line", data: { labels: spec.labels, datasets: spec.datasets }, options });
         detailChart.$visibilityScope = visibilityScope;
@@ -466,6 +496,49 @@
         detailChart.update("none");
       }
       updateDetailValue();
+    }
+
+    function analyzeSampleGaps(rows, range) {
+      const start = range.start.getTime();
+      const end = Math.min(range.end.getTime(), Date.now());
+      const timestamps = rows
+        .map((row) => new Date(row.timestamp).getTime())
+        .filter((timestamp) => Number.isFinite(timestamp) && timestamp >= start && timestamp <= end)
+        .sort((left, right) => left - right);
+      const differences = timestamps.slice(1).map((timestamp, index) => timestamp - timestamps[index]).filter((difference) => difference > 0);
+      const sortedDifferences = [...differences].sort((left, right) => left - right);
+      const expectedStep = sortedDifferences.length
+        ? sortedDifferences[Math.floor((sortedDifferences.length - 1) / 2)]
+        : state.panel === "system" ? 60000 : 2000;
+      const threshold = Math.max(expectedStep * 3, state.panel === "system" ? 180000 : 10000);
+      const gaps = [];
+      if (!timestamps.length) {
+        if (end > start) gaps.push({ start, end, durationMs: end - start });
+      } else {
+        if (timestamps[0] - start > threshold) gaps.push({ start, end: timestamps[0], durationMs: timestamps[0] - start });
+        timestamps.slice(1).forEach((timestamp, index) => {
+          const previous = timestamps[index];
+          if (timestamp - previous > threshold) gaps.push({ start: previous, end: timestamp, durationMs: timestamp - previous });
+        });
+        if (end - timestamps[timestamps.length - 1] > threshold) gaps.push({ start: timestamps[timestamps.length - 1], end, durationMs: end - timestamps[timestamps.length - 1] });
+      }
+      const periodMs = Math.max(0, end - start);
+      const gapMs = gaps.reduce((total, gap) => total + gap.durationMs, 0);
+      return {
+        threshold,
+        gapCount: gaps.length,
+        longestGapSeconds: Math.max(0, ...gaps.map((gap) => gap.durationMs / 1000)),
+        coveragePercent: periodMs ? Math.max(0, (periodMs - gapMs) / periodMs * 100) : 0
+      };
+    }
+
+    function updateDetailGapStatus(rows, range) {
+      const statistics = analyzeSampleGaps(rows, range);
+      state.detailGapStatistics = statistics;
+      state.detailGapThresholdMs = statistics.threshold;
+      $("detail-gap-status").textContent = statistics.gapCount
+        ? `покрытие ${fmt(statistics.coveragePercent, 1)}% · разрывов ${fmt(statistics.gapCount)} · самый длинный ${formatDuration(statistics.longestGapSeconds)}`
+        : `покрытие ${fmt(statistics.coveragePercent, 1)}% · разрывов нет`;
     }
 
     function updateDetailValue() {
@@ -603,13 +676,19 @@
     function pushTelemetry(snapshot) {
       if (state.telemetry.some((row) => row.id === snapshot.id)) return;
       appendLiveSample(state.telemetry, snapshot);
-      if (state.panel !== "system") drawDetail();
+      if (state.panel !== "system") {
+        updateDetailGapStatus(state.telemetry, detailRange());
+        drawDetail();
+      }
     }
 
     function pushSystem(snapshot) {
       if (state.system.some((row) => row.id === snapshot.id)) return;
       appendLiveSample(state.system, snapshot);
-      if (state.panel === "system") drawDetail();
+      if (state.panel === "system") {
+        updateDetailGapStatus(state.system, detailRange());
+        drawDetail();
+      }
     }
 
     function periodRange() {
@@ -677,28 +756,69 @@
       const dayMode = state.period === "day";
       historyChart.destroy();
       if (dayMode) {
+        const gaps = payload.gap_statistics?.gaps || [];
+        const gapBefore = (index) => {
+          if (!index) return null;
+          const previous = new Date(points[index - 1].timestamp).getTime();
+          const current = new Date(points[index].timestamp).getTime();
+          return gaps.find((gap) => new Date(gap.start).getTime() >= previous && new Date(gap.end).getTime() <= current);
+        };
+        const series = (value) => points.map((point, index) => {
+          const gap = gapBefore(index);
+          return {
+            x: new Date(point.timestamp).getTime(),
+            y: value(point),
+            gapBefore: Boolean(gap),
+            gapSeconds: gap?.duration_seconds || 0
+          };
+        });
+        const range = periodRange();
+        const historyXAxis = {
+          type: "linear",
+          min: range.start.getTime(),
+          max: range.end.getTime() - 1,
+          grid: { display: false },
+          ticks: { maxTicksLimit: 8, callback: (value) => shortTimeLabel(value) }
+        };
+        const options = baseOptions();
+        options.scales = singleScale("power", "кВт", historyXAxis);
+        options.plugins.tooltip.callbacks = {
+          ...options.plugins.tooltip.callbacks,
+          title: (items) => items.length ? new Date(items[0].parsed.x).toLocaleString("ru-RU") : ""
+        };
         historyChart = new Chart($("history-chart"), {
           type: "line",
           data: {
-            labels: points.map((point) => shortTimeLabel(point.timestamp)),
+            labels: [],
             datasets: applySeriesVisibility([
-              { ...line("PV, кВт", "#fbbf24", "power", true), data: points.map((point) => point.pv_w / 1000) },
-              { ...line("Дом, кВт", "#38bdf8", "power"), data: points.map((point) => point.load_w / 1000) },
-              { ...line("Батарея, кВт", "#34d399", "power"), data: points.map((point) => point.battery_w / 1000) },
-              { ...line("Сеть, кВт", "#a78bfa", "power"), data: points.map((point) => point.grid_w / 1000) }
+              { ...line("PV, кВт", "#fbbf24", "power", true), parsing: false, data: series((point) => point.pv_w / 1000) },
+              { ...line("Дом, кВт", "#38bdf8", "power"), parsing: false, data: series((point) => point.load_w / 1000) },
+              { ...line("Батарея, кВт", "#34d399", "power"), parsing: false, data: series((point) => point.battery_w / 1000) },
+              { ...line("Сеть, кВт", "#a78bfa", "power"), parsing: false, data: series((point) => point.grid_w / 1000) }
             ], "history")
           },
-          options: { ...baseOptions(), scales: singleScale("power", "кВт") }
+          options
         });
         historyChart.$visibilityScope = "history";
         $("history-status").textContent = payload.sample_count ? `${fmt(payload.sample_count)} снимков · учтено ${fmt(payload.integrated_seconds / 3600, 1)} ч без длинных разрывов` : "За этот день сохранённых данных пока нет";
+        const gapStats = payload.gap_statistics || {};
+        $("history-gap-status").textContent = gapStats.gap_count
+          ? `покрытие ${fmt(gapStats.coverage_percent, 1)}% · разрывов ${fmt(gapStats.gap_count)} · самый длинный ${formatDuration(gapStats.longest_gap_seconds)}`
+          : `покрытие ${fmt(gapStats.coverage_percent, 1)}% · разрывов нет`;
       } else {
-        const bar = (label, color, key) => ({ label, data: points.map((point) => point[key]), backgroundColor: `${color}b8`, borderColor: color, borderWidth: 1, borderRadius: 5 });
+        const bar = (label, color, key) => ({ label, data: points.map((point) => point.has_data ? point[key] : null), backgroundColor: `${color}b8`, borderColor: color, borderWidth: 1, borderRadius: 5 });
+        const maximum = Math.max(0, ...points.flatMap((point) => [point.pv_kwh || 0, point.load_kwh || 0, point.grid_import_kwh || 0, point.grid_export_kwh || 0]));
+        const missingMarker = {
+          type: "line", label: "Нет данных", showLine: false,
+          data: points.map((point) => point.has_data ? null : Math.max(maximum * .035, .02)),
+          borderColor: "#64748b", backgroundColor: "#64748b",
+          pointStyle: "crossRot", pointRadius: 7, pointHoverRadius: 8
+        };
         historyChart = new Chart($("history-chart"), {
           type: "bar",
           data: {
             labels: points.map((point) => point.label),
-            datasets: applySeriesVisibility([bar("PV", "#fbbf24", "pv_kwh"), bar("Дом", "#38bdf8", "load_kwh"), bar("Из сети", "#a78bfa", "grid_import_kwh"), bar("В сеть", "#f472b6", "grid_export_kwh")], "history")
+            datasets: applySeriesVisibility([bar("PV", "#fbbf24", "pv_kwh"), bar("Дом", "#38bdf8", "load_kwh"), bar("Из сети", "#a78bfa", "grid_import_kwh"), bar("В сеть", "#f472b6", "grid_export_kwh"), missingMarker], "history")
           },
           options: { ...baseOptions(), scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { beginAtZero: true, title: { display: true, text: "кВт·ч" }, ticks: { maxTicksLimit: 6 } } } }
         });
@@ -706,6 +826,8 @@
         const count = Number(payload.day_count || 0);
         const dayWord = count % 10 === 1 && count % 100 !== 11 ? "день" : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20) ? "дня" : "дней";
         $("history-status").textContent = count ? `${fmt(count)} ${dayWord} с сохранёнными показаниями` : "За этот период сохранённых данных пока нет";
+        const gapStats = payload.gap_statistics || {};
+        $("history-gap-status").textContent = `покрытие ${fmt(gapStats.coverage_percent, 1)}% · дней без данных ${fmt(gapStats.missing_day_count)} · неполных ${fmt(gapStats.partial_day_count)}`;
       }
     }
 
@@ -749,9 +871,11 @@
         if (requestId !== state.detailRequest) return;
         if (state.panel === "system") {
           state.system = rows;
+          updateDetailGapStatus(rows, range);
           if (rows.length && !state.latestSystem) updateSystem(rows[rows.length - 1]);
         } else {
           state.telemetry = rows;
+          updateDetailGapStatus(rows, range);
           if (rows.length && !state.latest) updateCards(rows[rows.length - 1]);
         }
         drawDetail(true);
