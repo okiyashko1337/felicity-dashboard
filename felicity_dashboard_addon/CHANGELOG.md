@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- PV-to-consumption energy coverage for the selected history period.
+- Chart legend visibility persists through live refreshes and page reloads.
+- Human-readable inverter warning codes in the diagnostics card.
+
 ## 0.6.0
 
 - Detail-chart scales for 15 minutes, 1 hour, 6 hours, and the current day.

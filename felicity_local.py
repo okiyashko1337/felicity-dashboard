@@ -17,6 +17,20 @@ from config import (
 )
 
 
+INVERTER_WARNING_MESSAGES = {
+    2: "низкое напряжение батареи",
+    3: "низкий SOC батареи",
+    15: "ограничение мощности: перегрев радиатора",
+    16: "ограничение мощности: внутренний перегрев",
+    17: "ошибка связи AFCI",
+    18: "неисправность внешнего вентилятора",
+    22: "неисправность внутреннего вентилятора",
+    23: "ошибка связи счётчика",
+    24: "обратное направление внешнего датчика CT",
+    26: "несовпадение версий ПО и оборудования",
+}
+
+
 class FelicityProtocolError(RuntimeError):
     """Raised when the local module returns an incomplete or unexpected reply."""
 
@@ -108,6 +122,15 @@ def _has_nonzero(value: Any) -> bool:
     if isinstance(value, dict):
         return any(_has_nonzero(item) for item in value.values())
     return bool(value)
+
+
+def _decode_warning_codes(value: Any) -> list[int]:
+    """Decode the inverter warning bitmask into the Wxx codes from its manual."""
+    try:
+        mask = int(value or 0)
+    except (TypeError, ValueError):
+        return []
+    return [code for code in range(1, 33) if mask & (1 << (code - 1))]
 
 
 def _parse_device_timestamp(value: Any) -> str | None:
@@ -250,6 +273,7 @@ def parse_realtime_packets(packets: list[dict[str, Any]]) -> dict[str, Any]:
     backup_phase_power = _scaled_phase_values(
         _array_value(inverter.get("ACout"), 4, default=[]), 1
     )
+    warning_codes = _decode_warning_codes(inverter.get("warn", 0))
 
     return {
         "source": "felicity_local_wifi",
@@ -264,6 +288,11 @@ def parse_realtime_packets(packets: list[dict[str, Any]]) -> dict[str, Any]:
             [inverter.get("warn", 0), inverter.get("faulS", [])]
         ),
         "warning": inverter.get("warn", 0),
+        "warning_codes": warning_codes,
+        "warning_messages": [
+            INVERTER_WARNING_MESSAGES.get(code, f"предупреждение W{code:02d}")
+            for code in warning_codes
+        ],
         "faults": inverter.get("faulS", []),
         "pv_power_w": {
             "pv1": pv1,

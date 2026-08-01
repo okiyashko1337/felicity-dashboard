@@ -95,7 +95,7 @@
   <main class="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-9">
     <header class="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p class="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">Felicity IVGM · UI 0.6.0</p>
+        <p class="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">Felicity IVGM · UI 0.6.1</p>
         <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Энергия дома</h1>
         <p class="mt-2 text-sm text-slate-500">Живые данные инвертора и история, которая хранится локально.</p>
       </div>
@@ -193,7 +193,11 @@
         <div class="rounded-2xl bg-fuchsia-300/5 p-4"><p class="text-xs text-slate-500">В сеть</p><p class="mt-2 text-xl font-semibold"><span id="stat-export">—</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p></div>
         <div class="rounded-2xl bg-emerald-300/5 p-4"><p class="text-xs text-slate-500">Заряд</p><p class="mt-2 text-xl font-semibold"><span id="stat-charge">—</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p></div>
         <div class="rounded-2xl bg-rose-300/5 p-4"><p class="text-xs text-slate-500">Разряд</p><p class="mt-2 text-xl font-semibold"><span id="stat-discharge">—</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p></div>
-        <div class="rounded-2xl bg-lime-300/5 p-4"><p class="text-xs text-slate-500">Своё PV</p><p class="mt-2 text-xl font-semibold"><span id="stat-self">—</span><small class="ml-1 text-xs text-slate-500">%</small></p></div>
+        <div class="rounded-2xl bg-lime-300/5 p-4">
+          <p class="text-xs text-slate-500">PV / потребление</p>
+          <p class="mt-2 whitespace-nowrap text-lg font-semibold"><span id="stat-coverage-ratio">— / —</span><small class="ml-1 text-xs text-slate-500">кВт·ч</small></p>
+          <p class="mt-1 text-xs text-lime-300"><span id="stat-coverage-percent">—</span>% покрытия</p>
+        </div>
       </div>
 
       <div class="rounded-2xl border border-white/5 bg-black/10 p-4 sm:p-5">
@@ -240,6 +244,15 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const DETAIL_MAX_POINTS = 900;
+    const HIDDEN_SERIES_KEY = "felicity-hidden-series-v1";
+    const loadHiddenSeries = () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(HIDDEN_SERIES_KEY) || "[]");
+        return new Set(Array.isArray(stored) ? stored : []);
+      } catch (_error) {
+        return new Set();
+      }
+    };
     const state = {
       panel: "solar",
       detailScale: "6h",
@@ -254,7 +267,8 @@
       analyticsRequest: 0,
       latest: null,
       latestSystem: null,
-      connectionError: null
+      connectionError: null,
+      hiddenSeries: loadHiddenSeries()
     };
 
     const apiUrl = (path) => new URL(path, window.location.href).toString();
@@ -308,12 +322,33 @@
       backgroundColor: fill ? `${color}18` : color, borderWidth: 2,
       pointRadius: 0, pointHoverRadius: 4, tension: .35, fill
     });
+    const visibilityKey = (scope, label) => `${scope}:${label}`;
+    const applySeriesVisibility = (datasets, scope) => datasets.map((dataset) => ({
+      ...dataset,
+      hidden: state.hiddenSeries.has(visibilityKey(scope, dataset.label))
+    }));
+    function rememberLegendClick(_event, legendItem, legend) {
+      const chart = legend.chart;
+      const index = legendItem.datasetIndex;
+      const dataset = chart.data.datasets[index];
+      const wasVisible = chart.isDatasetVisible(index);
+      chart.setDatasetVisibility(index, !wasVisible);
+      const key = visibilityKey(chart.$visibilityScope || "chart", dataset.label);
+      if (wasVisible) state.hiddenSeries.add(key);
+      else state.hiddenSeries.delete(key);
+      try {
+        localStorage.setItem(HIDDEN_SERIES_KEY, JSON.stringify([...state.hiddenSeries]));
+      } catch (_error) {
+        // The chart still works when browser storage is unavailable.
+      }
+      chart.update();
+    }
     const baseOptions = () => ({
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 250 },
       interaction: { intersect: false, mode: "index" },
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 7 } } },
+      plugins: { legend: { onClick: rememberLegendClick, labels: { usePointStyle: true, boxWidth: 7 } } },
       scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { ticks: { maxTicksLimit: 6 } } }
     });
 
@@ -323,6 +358,7 @@
 
     let detailChart = null;
     let historyChart = new Chart($("history-chart"), { type: "bar", data: { labels: [], datasets: [] }, options: baseOptions() });
+    historyChart.$visibilityScope = "history";
 
     const panelMeta = {
       solar: { title: "Солнечная генерация", subtitle: "PV1, PV2 и напряжение MPPT", color: "text-amber-300", valueLabel: "текущая мощность" },
@@ -408,6 +444,8 @@
       $("detail-value-label").textContent = meta.valueLabel;
       $("detail-kicker").className = `text-xs font-semibold uppercase tracking-[.2em] ${meta.color}`;
       const spec = detailSpec();
+      const visibilityScope = `detail:${state.panel}`;
+      spec.datasets = applySeriesVisibility(spec.datasets, visibilityScope);
       if (detailChart && recreate) { detailChart.destroy(); detailChart = null; }
       if (!detailChart) {
         const options = baseOptions();
@@ -418,10 +456,13 @@
           }
         };
         detailChart = new Chart($("detail-chart"), { type: "line", data: { labels: spec.labels, datasets: spec.datasets }, options });
+        detailChart.$visibilityScope = visibilityScope;
       } else {
         detailChart.data.labels = spec.labels;
         detailChart.data.datasets = spec.datasets;
         detailChart.options.scales = spec.scales;
+        detailChart.$visibilityScope = visibilityScope;
+        spec.datasets.forEach((dataset, index) => detailChart.setDatasetVisibility(index, !dataset.hidden));
         detailChart.update("none");
       }
       updateDetailValue();
@@ -497,7 +538,16 @@
       $("backup-power").textContent = fmt(data.backup_power_w?.total);
       const backup = data.backup_voltage_v;
       const backupAverage = backup ? (number(backup.l1) + number(backup.l2) + number(backup.l3)) / 3 : null;
-      $("backup-detail").textContent = `Режим ${data.device?.work_mode ?? "—"} · ${data.healthy ? "норма" : "есть предупреждение"} · ${fmt(backupAverage, 1)} В`;
+      const activeFaults = (data.faults || []).flat(Infinity).filter((value) => number(value));
+      const warningCodes = data.warning_codes || [];
+      const warningMessages = data.warning_messages || [];
+      let condition = "норма";
+      if (activeFaults.length) condition = `авария: ${activeFaults.join(", ")}`;
+      else if (warningMessages.length) {
+        const codes = warningCodes.length ? ` (${warningCodes.map((code) => `W${String(code).padStart(2, "0")}`).join(", ")})` : "";
+        condition = `${warningMessages.join(", ")}${codes}`;
+      } else if (number(data.warning)) condition = `предупреждение · маска ${data.warning}`;
+      $("backup-detail").textContent = `Режим ${data.device?.work_mode ?? "—"} · ${condition} · ${fmt(backupAverage, 1)} В`;
     }
 
     function updateCards(snapshot) {
@@ -615,7 +665,10 @@
       $("stat-export").textContent = fmt(stats.grid_export_kwh || 0, 2);
       $("stat-charge").textContent = fmt(stats.battery_charge_kwh || 0, 2);
       $("stat-discharge").textContent = fmt(stats.battery_discharge_kwh || 0, 2);
-      $("stat-self").textContent = fmt(stats.self_consumption_percent || 0, 0);
+      const pv = number(stats.pv_kwh) || 0;
+      const load = number(stats.load_kwh) || 0;
+      $("stat-coverage-ratio").textContent = `${fmt(pv, 2)} / ${fmt(load, 2)}`;
+      $("stat-coverage-percent").textContent = load > 0 ? fmt(pv / load * 100, 0) : "—";
     }
 
     function drawHistory(payload) {
@@ -628,15 +681,16 @@
           type: "line",
           data: {
             labels: points.map((point) => shortTimeLabel(point.timestamp)),
-            datasets: [
+            datasets: applySeriesVisibility([
               { ...line("PV, кВт", "#fbbf24", "power", true), data: points.map((point) => point.pv_w / 1000) },
               { ...line("Дом, кВт", "#38bdf8", "power"), data: points.map((point) => point.load_w / 1000) },
               { ...line("Батарея, кВт", "#34d399", "power"), data: points.map((point) => point.battery_w / 1000) },
               { ...line("Сеть, кВт", "#a78bfa", "power"), data: points.map((point) => point.grid_w / 1000) }
-            ]
+            ], "history")
           },
           options: { ...baseOptions(), scales: singleScale("power", "кВт") }
         });
+        historyChart.$visibilityScope = "history";
         $("history-status").textContent = payload.sample_count ? `${fmt(payload.sample_count)} снимков · учтено ${fmt(payload.integrated_seconds / 3600, 1)} ч без длинных разрывов` : "За этот день сохранённых данных пока нет";
       } else {
         const bar = (label, color, key) => ({ label, data: points.map((point) => point[key]), backgroundColor: `${color}b8`, borderColor: color, borderWidth: 1, borderRadius: 5 });
@@ -644,10 +698,11 @@
           type: "bar",
           data: {
             labels: points.map((point) => point.label),
-            datasets: [bar("PV", "#fbbf24", "pv_kwh"), bar("Дом", "#38bdf8", "load_kwh"), bar("Из сети", "#a78bfa", "grid_import_kwh"), bar("В сеть", "#f472b6", "grid_export_kwh")]
+            datasets: applySeriesVisibility([bar("PV", "#fbbf24", "pv_kwh"), bar("Дом", "#38bdf8", "load_kwh"), bar("Из сети", "#a78bfa", "grid_import_kwh"), bar("В сеть", "#f472b6", "grid_export_kwh")], "history")
           },
           options: { ...baseOptions(), scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } }, y: { beginAtZero: true, title: { display: true, text: "кВт·ч" }, ticks: { maxTicksLimit: 6 } } } }
         });
+        historyChart.$visibilityScope = "history";
         const count = Number(payload.day_count || 0);
         const dayWord = count % 10 === 1 && count % 100 !== 11 ? "день" : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20) ? "дня" : "дней";
         $("history-status").textContent = count ? `${fmt(count)} ${dayWord} с сохранёнными показаниями` : "За этот период сохранённых данных пока нет";

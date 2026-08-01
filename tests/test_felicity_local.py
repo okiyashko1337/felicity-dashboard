@@ -90,6 +90,15 @@ class FelicityLocalTests(unittest.TestCase):
         self.assertEqual(parsed["batteries"][0]["cell_delta_mv"], 4.0)
         self.assertEqual(parsed["batteries"][1]["current_a"], 58.7)
 
+    def test_decodes_low_soc_warning_bitmask(self) -> None:
+        inverter = {**INVERTER_PACKET, "warn": 4}
+
+        parsed = parse_realtime_packets([inverter])
+
+        self.assertFalse(parsed["healthy"])
+        self.assertEqual(parsed["warning_codes"], [3])
+        self.assertEqual(parsed["warning_messages"], ["низкий SOC батареи"])
+
     def test_database_round_trip(self) -> None:
         parsed = parse_realtime_packets([INVERTER_PACKET])
         with tempfile.TemporaryDirectory() as directory:
