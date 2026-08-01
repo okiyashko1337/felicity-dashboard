@@ -5,7 +5,12 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from analytics import build_daily_aggregates, build_energy_analytics, build_period_analytics
+from analytics import (
+    build_daily_aggregates,
+    build_energy_analytics,
+    build_gap_statistics,
+    build_period_analytics,
+)
 from database import (
     ensure_energy_daily,
     get_energy_daily,
@@ -67,6 +72,48 @@ class AnalyticsTests(unittest.TestCase):
         result = build_energy_analytics(rows)
         self.assertEqual(result["stats"]["pv_kwh"], 0)
         self.assertEqual(result["integrated_seconds"], 0)
+
+    def test_reports_internal_and_boundary_gaps(self) -> None:
+        start = datetime(2026, 7, 31, tzinfo=timezone.utc)
+        rows = [
+            {"timestamp": (start + timedelta(seconds=second)).isoformat(), "parsed": telemetry(1, 1, 0, 0, 50)}
+            for second in (0, 2, 12, 14)
+        ]
+
+        result = build_gap_statistics(
+            rows,
+            range_start=start,
+            range_end=start + timedelta(seconds=20),
+            max_gap_seconds=5,
+            now=start + timedelta(seconds=20),
+        )
+
+        self.assertEqual(result["gap_count"], 2)
+        self.assertEqual(result["longest_gap_seconds"], 10)
+        self.assertEqual(result["coverage_percent"], 20.0)
+
+    def test_period_analytics_marks_days_without_data(self) -> None:
+        rows = [
+            {
+                "day": day,
+                **{field: 1000 for field in ("pv_wh", "load_wh", "grid_import_wh", "grid_export_wh", "battery_charge_wh", "battery_discharge_wh")},
+                "integrated_seconds": 86400,
+                "sample_count": 10,
+            }
+            for day in ("2026-07-31", "2026-08-02")
+        ]
+
+        result = build_period_analytics(
+            rows,
+            start_day=datetime(2026, 7, 31).date(),
+            end_day=datetime(2026, 8, 3).date(),
+            now=datetime(2026, 8, 4, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([point["label"] for point in result["points"]], ["2026-07-31", "2026-08-01", "2026-08-02"])
+        self.assertFalse(result["points"][1]["has_data"])
+        self.assertEqual(result["gap_statistics"]["missing_day_count"], 1)
+        self.assertEqual(result["gap_statistics"]["coverage_percent"], 66.7)
 
     def test_range_query_is_half_open(self) -> None:
         start = datetime(2026, 7, 31, tzinfo=timezone.utc)

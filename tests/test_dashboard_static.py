@@ -27,7 +27,10 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn('id="stat-coverage-percent"', html)
         self.assertIn("felicity-hidden-series-v1", html)
         self.assertIn("rememberLegendClick", html)
-        self.assertIn("UI 0.6.1", html)
+        self.assertIn('id="detail-gap-status"', html)
+        self.assertIn('id="history-gap-status"', html)
+        self.assertIn("gapBefore", html)
+        self.assertIn("UI 0.7.0", html)
         self.assertNotIn("progress-bar", html)
 
     def test_dashboard_html_is_never_cached(self) -> None:
@@ -37,7 +40,7 @@ class DashboardStaticTests(unittest.TestCase):
             response.headers["cache-control"],
             "no-store, no-cache, must-revalidate, max-age=0",
         )
-        self.assertEqual(response.headers["x-felicity-ui-version"], "0.6.1")
+        self.assertEqual(response.headers["x-felicity-ui-version"], "0.7.0")
 
 
 if __name__ == "__main__":
