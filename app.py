@@ -27,7 +27,7 @@ from database import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-UI_VERSION = "0.6.0"
+UI_VERSION = "0.6.1"
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
