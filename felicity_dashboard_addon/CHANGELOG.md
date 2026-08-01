@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0
+
+- Optional UART bridge for the Nextion NX4827P043_011 local display.
+- Six-tile home screen protocol with dedicated detail pages.
+- Tapping today's date opens daily telemetry gap statistics.
+- Current values render before a sparse, incremental chart replay.
+- Smooth 115200-baud updates without unreliable transparent waveform transfers.
+
 ## 0.7.0
 
 - Gap statistics with coverage, gap count, and longest missing interval.

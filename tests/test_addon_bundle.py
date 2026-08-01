@@ -12,6 +12,7 @@ BUNDLED_FILES = (
     "database.py",
     "felicity_local.py",
     "main.py",
+    "nextion_bridge.py",
     "system_monitor.py",
     "static/index.html",
 )

@@ -4,11 +4,17 @@ declare inverter_host
 declare inverter_port
 declare poll_interval
 declare system_interval
+declare nextion_enabled
+declare nextion_port
+declare nextion_baudrate
 
 inverter_host=$(bashio::config 'inverter_host')
 inverter_port=$(bashio::config 'inverter_port')
 poll_interval=$(bashio::config 'poll_interval')
 system_interval=$(bashio::config 'system_interval')
+nextion_enabled=$(bashio::config 'nextion_enabled')
+nextion_port=$(bashio::config 'nextion_port')
+nextion_baudrate=$(bashio::config 'nextion_baudrate')
 
 export FELICITY_HOST="${inverter_host}"
 export FELICITY_PORT="${inverter_port}"
@@ -31,10 +37,30 @@ monitor_pid=$!
     --proxy-headers &
 web_pid=$!
 
+nextion_pid=""
+if [[ "${nextion_enabled}" == "true" ]]; then
+    if [[ -z "${nextion_port}" ]]; then
+        bashio::log.warning "Nextion is enabled, but nextion_port is empty"
+    else
+        bashio::log.info "Starting Nextion on ${nextion_port} at ${nextion_baudrate} baud"
+        /opt/felicity-venv/bin/python nextion_bridge.py \
+            --port "${nextion_port}" \
+            --baudrate "${nextion_baudrate}" \
+            --interval "${poll_interval}" &
+        nextion_pid=$!
+    fi
+fi
+
 shutdown() {
     bashio::log.info "Stopping Felicity Dashboard"
     kill -TERM "${collector_pid}" "${monitor_pid}" "${web_pid}" 2>/dev/null || true
+    if [[ -n "${nextion_pid}" ]]; then
+        kill -TERM "${nextion_pid}" 2>/dev/null || true
+    fi
     wait "${collector_pid}" "${monitor_pid}" "${web_pid}" 2>/dev/null || true
+    if [[ -n "${nextion_pid}" ]]; then
+        wait "${nextion_pid}" 2>/dev/null || true
+    fi
 }
 
 trap shutdown SIGTERM SIGINT

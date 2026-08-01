@@ -9,6 +9,7 @@ import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from config import DB_PATH
 from database import initialize_database, save_telemetry_snapshot
@@ -23,7 +24,8 @@ def stop(_signum: int, _frame: object) -> None:
 
 
 class InverterSimulator:
-    def __init__(self) -> None:
+    def __init__(self, pv_test_watts: Optional[float] = None) -> None:
+        self.pv_test_watts = pv_test_watts
         self.soc = random.uniform(55.0, 75.0)
         self.cloud_factor = random.uniform(0.85, 1.0)
         self.grid_voltage = [230.0, 230.0, 230.0]
@@ -58,6 +60,9 @@ class InverterSimulator:
         pv_total = 5000.0 * daylight * self.cloud_factor
         if daylight == 0:
             pv_total = 0.0
+        if self.pv_test_watts is not None:
+            pv_total = max(0.0, self.pv_test_watts + random.uniform(-60, 60))
+            daylight = min(1.0, pv_total / 5000.0)
 
         pv1 = max(0, round(pv_total * 0.52 + random.uniform(-30, 30)))
         pv2 = max(0, round(pv_total - pv1))
@@ -231,12 +236,17 @@ def main() -> int:
         action="store_true",
         help="Generate one snapshot and exit",
     )
+    parser.add_argument(
+        "--pv-test-watts",
+        type=float,
+        help="Override the solar curve with a visible test power level",
+    )
     args = parser.parse_args()
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     initialize_database(args.db)
-    simulator = InverterSimulator()
+    simulator = InverterSimulator(pv_test_watts=args.pv_test_watts)
 
     while running:
         cycle_started = time.monotonic()
