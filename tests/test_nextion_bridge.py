@@ -235,6 +235,29 @@ class NextionBridgeTests(unittest.TestCase):
 
         self.assertEqual(len(dashboard.histories["system"][-1]), 4)
 
+    def test_system_page_replaces_legacy_background_and_colors_metrics(self) -> None:
+        now = datetime(2026, 8, 2, 8, 24, tzinfo=timezone.utc)
+        transport = RecordingTransport()
+        dashboard = NextionDashboard(transport, UnusedApi(), clock=lambda: now)
+        dashboard.page = "system"
+        dashboard.live = {"timestamp": now.isoformat(), "parsed": {}}
+        dashboard.system_data = {
+            "data": {
+                "cpu_percent": 55.4,
+                "memory": {"percent": 38.2},
+                "cpu_temperature_c": 66.1,
+                "disk": {"percent": 17.1},
+            }
+        }
+
+        dashboard.render_page(replay=True)
+
+        self.assertIn("fill 0,0,480,272,162", transport.commands)
+        self.assertEqual(transport.text[("system", "tBrand")], "FELICITY")
+        self.assertEqual(transport.text[("system", "tTitle")], "SYSTEM")
+        self.assertEqual(transport.colors[("system", "tMain")], 2016)
+        self.assertEqual(transport.colors[("system", "tC")], 64495)
+
     def test_duration_is_compact_for_small_display(self) -> None:
         self.assertEqual(format_duration(42), "42s")
         self.assertEqual(format_duration(125), "2m")
