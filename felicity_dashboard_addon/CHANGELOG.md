@@ -1,11 +1,5 @@
 # Changelog
 
-## 0.10.8
-
-- Clear the native Nextion waveform buffer before replaying stored history.
-- Preserve the original HMI grid instead of drawing a second inset grid.
-- Preserve the original line geometry and its reserved axis margins.
-
 ## 0.10.7
 
 - Keep daily detail pages on a fixed `00:00/12:00/24:00` axis from the first frame.
