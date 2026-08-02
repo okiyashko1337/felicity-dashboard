@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import _device_chart_sample, _gap_coverage_samples
+from app import _device_chart_sample, _device_summary_payload, _gap_coverage_samples
 from database import (
     get_parsed_telemetry_history,
     get_telemetry_timestamps,
@@ -66,6 +66,26 @@ class DeviceApiTests(unittest.TestCase):
         )
 
         self.assertEqual(samples, [[100.0], [0.0], [100.0], [100.0]])
+
+    def test_summary_flattens_system_and_daily_energy(self) -> None:
+        payload = _device_summary_payload(
+            {"data": {
+                "cpu_percent": 12.5,
+                "memory": {"percent": 44.0},
+                "cpu_temperature_c": 67.2,
+                "disk": {"percent": 18.0},
+            }},
+            {"stats": {
+                "pv_kwh": 10.0,
+                "load_kwh": 8.0,
+                "grid_import_kwh": 1.2,
+                "grid_export_kwh": 2.3,
+            }},
+        )
+
+        self.assertEqual(payload["system"]["memory_percent"], 44.0)
+        self.assertEqual(payload["today"]["coverage_percent"], 125.0)
+        self.assertEqual(payload["today"]["grid_export_kwh"], 2.3)
 
 
 if __name__ == "__main__":

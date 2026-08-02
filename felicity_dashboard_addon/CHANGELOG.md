@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.3
+
+- Add a compact slow-changing System and Today summary endpoint for ESP32.
+- Restore all six live home tiles without adding new telemetry storage.
+- Show real CPU, RAM, temperature, disk, daily energy, coverage, and grid totals on detail pages.
+- Poll summary data every 60 seconds while keeping inverter values at the fast interval.
+
 ## 0.10.2
 
 - Use the Home Assistant build version as the single UI and app version source.

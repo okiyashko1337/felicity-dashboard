@@ -22,6 +22,18 @@ typedef struct {
     char timestamp[40];
 } dashboard_snapshot_t;
 
+typedef struct {
+    float cpu_percent;
+    float memory_percent;
+    float temperature_c;
+    float disk_percent;
+    float today_pv_kwh;
+    float today_load_kwh;
+    float today_coverage_percent;
+    float today_grid_import_kwh;
+    float today_grid_export_kwh;
+} dashboard_summary_t;
+
 #define DASHBOARD_CHART_MAX_SAMPLES 30
 #define DASHBOARD_CHART_MAX_CHANNELS 4
 
@@ -43,6 +55,8 @@ typedef struct {
 void dashboard_sample_snapshot(dashboard_snapshot_t *snapshot);
 bool dashboard_parse_current(const char *json, dashboard_snapshot_t *snapshot);
 bool dashboard_fetch_current(const char *base_url, dashboard_snapshot_t *snapshot);
+void dashboard_sample_summary(dashboard_summary_t *summary);
+bool dashboard_fetch_summary(const char *base_url, dashboard_summary_t *summary);
 void dashboard_sample_chart(const char *metric, dashboard_chart_t *chart);
 bool dashboard_fetch_chart(const char *base_url, const char *metric, dashboard_chart_t *chart);
 void dashboard_sample_gaps(dashboard_gaps_t *gaps);

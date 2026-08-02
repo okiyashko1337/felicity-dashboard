@@ -60,6 +60,7 @@ void app_main(void)
     nextion_init();
     dashboard_page_t page = DASH_PAGE_HOME;
     dashboard_snapshot_t snapshot = {0};
+    dashboard_summary_t summary = {0};
     dashboard_chart_t chart = {0};
     dashboard_gaps_t gaps = {0};
     bool gaps_live = false;
@@ -67,6 +68,7 @@ void app_main(void)
 
 #if CONFIG_FELICITY_EMULATOR
     dashboard_sample_snapshot(&snapshot);
+    dashboard_sample_summary(&summary);
     ESP_LOGI(TAG, "ESP32-C3 emulator mode; using deterministic Raspberry sample");
 #else
     wifi_init();
@@ -75,7 +77,9 @@ void app_main(void)
 #endif
 
     TickType_t next_poll = 0;
+    TickType_t next_summary = 0;
     TickType_t next_chart = 0;
+    bool summary_live = false;
 #if CONFIG_FELICITY_EMULATOR
     TickType_t next_demo_page = pdMS_TO_TICKS(5000);
 #endif
@@ -97,9 +101,24 @@ void app_main(void)
             next_poll = 0;
             next_chart = 0;
         }
+        if (now >= next_summary) {
+#if CONFIG_FELICITY_EMULATOR
+            dashboard_sample_summary(&summary);
+            summary_live = true;
+#else
+            summary_live = dashboard_fetch_summary(CONFIG_FELICITY_API_BASE_URL, &summary);
+#endif
+            if (page == DASH_PAGE_HOME || page == DASH_PAGE_SYSTEM || page == DASH_PAGE_TODAY) {
+                next_poll = 0;
+            }
+            next_summary = now + pdMS_TO_TICKS(60000);
+        }
         if (now >= next_poll) {
             if (page == DASH_PAGE_GAPS) {
                 nextion_render_gaps(&gaps, gaps_live);
+                next_poll = now + pdMS_TO_TICKS(2000);
+            } else if (page == DASH_PAGE_SYSTEM || page == DASH_PAGE_TODAY) {
+                nextion_render_detail(page, &snapshot, &summary, summary_live);
                 next_poll = now + pdMS_TO_TICKS(2000);
             } else {
 #if CONFIG_FELICITY_EMULATOR
@@ -107,8 +126,8 @@ void app_main(void)
 #else
                 bool live = dashboard_fetch_current(CONFIG_FELICITY_API_BASE_URL, &snapshot);
 #endif
-                if (page == DASH_PAGE_HOME) nextion_render_home(&snapshot, live);
-                else nextion_render_detail(page, &snapshot, live);
+                if (page == DASH_PAGE_HOME) nextion_render_home(&snapshot, &summary, live);
+                else nextion_render_detail(page, &snapshot, &summary, live);
                 next_poll = now + pdMS_TO_TICKS(2000);
             }
         }

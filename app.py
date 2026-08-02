@@ -86,6 +86,42 @@ def device_current() -> dict:
     }
 
 
+def _device_summary_payload(system_snapshot: dict | None, analytics: dict) -> dict:
+    system = (system_snapshot or {}).get("data", {})
+    stats = analytics.get("stats", {})
+    pv_kwh = _value(stats, "pv_kwh")
+    load_kwh = _value(stats, "load_kwh")
+    return {
+        "system": {
+            "cpu_percent": _value(system, "cpu_percent"),
+            "memory_percent": _value(system, "memory", "percent"),
+            "temperature_c": _value(system, "cpu_temperature_c"),
+            "disk_percent": _value(system, "disk", "percent"),
+        },
+        "today": {
+            "pv_kwh": pv_kwh,
+            "load_kwh": load_kwh,
+            "coverage_percent": pv_kwh / load_kwh * 100 if load_kwh else 0.0,
+            "grid_import_kwh": _value(stats, "grid_import_kwh"),
+            "grid_export_kwh": _value(stats, "grid_export_kwh"),
+        },
+    }
+
+
+@app.get("/api/device/summary")
+def device_summary() -> dict:
+    """Return slow-changing System and Today values for the ESP32 home page."""
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    try:
+        system_snapshot = get_latest_system_snapshot(DB_PATH)
+        rows = get_energy_daily(today.isoformat(), tomorrow.isoformat(), DB_PATH)
+        analytics = build_period_analytics(rows, start_day=today, end_day=tomorrow)
+    except sqlite3.Error as error:
+        raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
+    return _device_summary_payload(system_snapshot, analytics)
+
+
 def _value(data: dict, *path: str) -> float:
     current = data
     for key in path:
