@@ -227,7 +227,7 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertTrue(dashboard.handle_frame(b"\x67\x01\x2c\x00\x14\x00"))
         self.assertEqual(dashboard.page, "gaps")
 
-    def test_replay_draws_manual_lines_without_waveform_refresh(self) -> None:
+    def test_replay_clears_native_waveform_then_draws_manual_lines(self) -> None:
         transport = RecordingTransport()
         dashboard = NextionDashboard(transport, UnusedApi())
         dashboard.page = "pv"
@@ -235,7 +235,7 @@ class NextionBridgeTests(unittest.TestCase):
 
         dashboard.replay_waveform()
 
-        self.assertEqual(transport.cleared, 0)
+        self.assertEqual(transport.cleared, 1)
         self.assertEqual(
             [command for command in transport.commands if command.startswith("line ")],
             [
@@ -334,7 +334,7 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertNotIn("fill ", command)
         self.assertNotIn("line ", command)
 
-    def test_chart_refresh_only_touches_plot_rectangle(self) -> None:
+    def test_chart_refresh_only_clears_native_waveform(self) -> None:
         transport = RecordingTransport()
         dashboard = NextionDashboard(transport, UnusedApi())
         dashboard.page = "load"
@@ -351,9 +351,8 @@ class NextionBridgeTests(unittest.TestCase):
         needs_full_repaint = dashboard.collect_api_results()
 
         self.assertFalse(needs_full_repaint)
-        self.assertTrue(transport.commands)
-        self.assertTrue(all(command.startswith(("fill 60,120,", "line ")) for command in transport.commands))
-        self.assertFalse(any(command.startswith("xstr ") for command in transport.commands))
+        self.assertEqual(transport.cleared, 1)
+        self.assertEqual(transport.commands, [])
 
     def test_identical_chart_payload_sends_no_uart_commands(self) -> None:
         transport = RecordingTransport()
@@ -451,7 +450,7 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(transport.text[("gaps", "tXMid")], "11:59")
         self.assertEqual(transport.text[("gaps", "tXRight")], "23:59")
         self.assertEqual(len(dashboard.chart_replays["gaps"]), 24)
-        self.assertEqual(transport.cleared, 0)
+        self.assertEqual(transport.cleared, 1)
         self.assertEqual(transport.waveform_batches, [])
 
         dashboard.advance_waveform_replay()
