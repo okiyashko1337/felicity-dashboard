@@ -27,6 +27,9 @@ bashio::log.info "Telemetry: ${poll_interval}s; Raspberry Pi metrics: ${system_i
 
 cd /app || exit 1
 
+bashio::log.info "Checking compact telemetry storage"
+/opt/felicity-venv/bin/python storage_migration.py || exit 1
+
 /opt/felicity-venv/bin/python collector.py &
 collector_pid=$!
 /opt/felicity-venv/bin/python system_monitor.py --interval "${system_interval}" &
@@ -34,6 +37,7 @@ monitor_pid=$!
 /opt/felicity-venv/bin/uvicorn main:app \
     --host 0.0.0.0 \
     --port 8000 \
+    --no-access-log \
     --proxy-headers &
 web_pid=$!
 

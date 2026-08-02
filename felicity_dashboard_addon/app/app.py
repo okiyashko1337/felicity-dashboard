@@ -12,7 +12,7 @@ from typing import Literal, Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
-from config import DB_PATH
+from config import DB_PATH, HISTORY_INTERVAL_SECONDS
 from analytics import build_energy_analytics, build_gap_statistics, build_period_analytics
 from database import (
     get_latest_telemetry,
@@ -336,11 +336,19 @@ def analytics(
         raise HTTPException(status_code=422, detail="range cannot exceed 36 hours")
     try:
         rows = get_telemetry_range(start, end, DB_PATH)
+        coverage_rows = get_telemetry_timestamps(start, end, DB_PATH)
         result = build_energy_analytics(
             rows,
             max_points=max_points,
+            max_gap_seconds=HISTORY_INTERVAL_SECONDS * 1.5,
             range_start=start,
             range_end=end,
+        )
+        result["gap_statistics"] = build_gap_statistics(
+            coverage_rows,
+            range_start=start,
+            range_end=end,
+            now=datetime.now(start.tzinfo),
         )
     except sqlite3.Error as error:
         raise HTTPException(status_code=500, detail=f"Database error: {error}") from error

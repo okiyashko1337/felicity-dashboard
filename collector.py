@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import signal
+import sqlite3
 import time
 from pathlib import Path
 
@@ -50,6 +51,7 @@ def main() -> int:
         args.port,
         args.interval,
     )
+    next_status_log = 0.0
 
     while running:
         cycle_started = time.monotonic()
@@ -62,21 +64,25 @@ def main() -> int:
                 source="felicity_local_wifi",
                 db_path=args.db,
             )
-            logger.info(
-                "Saved #%s: PV=%s W, home=%s W, battery=%s W, SOC=%s%%, grid=%s W",
-                snapshot_id,
-                parsed["pv_power_w"]["total"],
-                parsed["load_power_w"]["total"],
-                parsed["battery_power_w"],
-                parsed["soc_percent"],
-                parsed["grid_power_w"]["total"],
-            )
+            if args.once or cycle_started >= next_status_log:
+                logger.info(
+                    "Saved #%s: PV=%s W, home=%s W, battery=%s W, SOC=%s%%, grid=%s W",
+                    snapshot_id,
+                    parsed["pv_power_w"]["total"],
+                    parsed["load_power_w"]["total"],
+                    parsed["battery_power_w"],
+                    parsed["soc_percent"],
+                    parsed["grid_power_w"]["total"],
+                )
+                next_status_log = cycle_started + 60
             if args.once:
                 break
         except (ConnectionError, OSError, FelicityProtocolError) as error:
             logger.error("Polling failed: %s", error)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             logger.exception("Cannot parse Felicity response: %s", error)
+        except sqlite3.Error as error:
+            logger.error("Telemetry database temporarily unavailable: %s", error)
 
         elapsed = time.monotonic() - cycle_started
         time.sleep(max(0, args.interval - elapsed))

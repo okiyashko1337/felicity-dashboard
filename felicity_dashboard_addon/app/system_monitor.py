@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import signal
+import sqlite3
 import time
 from pathlib import Path
 from typing import Optional
@@ -157,19 +158,25 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     initialize_database(args.db)
     logger.info("System monitor started: every %.1f seconds", args.interval)
+    next_status_log = 0.0
 
     while running:
         cycle_started = time.monotonic()
-        metrics = collect_system_metrics(args.db)
-        snapshot_id = save_system_snapshot(metrics, db_path=args.db)
-        logger.info(
-            "Saved system #%s: CPU=%s%% RAM=%s%% disk=%s%% DB=%s bytes",
-            snapshot_id,
-            metrics["cpu_percent"],
-            metrics["memory"]["percent"],
-            metrics["disk"]["percent"],
-            metrics["database_size_bytes"],
-        )
+        try:
+            metrics = collect_system_metrics(args.db)
+            snapshot_id = save_system_snapshot(metrics, db_path=args.db)
+            if args.once or cycle_started >= next_status_log:
+                logger.info(
+                    "Saved system #%s: CPU=%s%% RAM=%s%% disk=%s%% DB=%s bytes",
+                    snapshot_id,
+                    metrics["cpu_percent"],
+                    metrics["memory"]["percent"],
+                    metrics["disk"]["percent"],
+                    metrics["database_size_bytes"],
+                )
+                next_status_log = cycle_started + 60
+        except (OSError, sqlite3.Error) as error:
+            logger.error("System metrics temporarily unavailable: %s", error)
         if args.once:
             break
         elapsed = time.monotonic() - cycle_started

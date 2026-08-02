@@ -7,6 +7,7 @@ from unittest.mock import patch
 import sqlite3
 
 from database import (
+    get_latest_telemetry,
     get_parsed_telemetry_range_sampled,
     get_system_range,
     get_telemetry_range_sampled,
@@ -58,8 +59,9 @@ class DetailRangeTests(unittest.TestCase):
             )
 
         self.assertLessEqual(len(rows), 10)
-        self.assertEqual(rows[0]["id"], 1)
-        self.assertEqual(rows[-1]["id"], 100)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["timestamp"], start.isoformat())
+        self.assertEqual(rows[-1]["timestamp"], (start + timedelta(seconds=120)).isoformat())
 
     def test_system_range_is_evenly_sampled_and_keeps_edges(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -101,10 +103,12 @@ class DetailRangeTests(unittest.TestCase):
             rows = get_parsed_telemetry_range_sampled(
                 start, start + timedelta(minutes=5), 5, db_path
             )
+            latest = get_latest_telemetry(db_path)
 
         self.assertLessEqual(len(rows), 5)
         self.assertEqual(rows[0]["parsed"], {"soc_percent": 0})
-        self.assertEqual(rows[-1]["parsed"], {"soc_percent": 19})
+        self.assertEqual(rows[-1]["parsed"], {"soc_percent": 12})
+        self.assertEqual(latest["parsed"], {"soc_percent": 19})
         self.assertNotIn("raw", rows[0])
 
 
