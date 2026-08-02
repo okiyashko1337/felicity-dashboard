@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="272" viewBox="0 0 480 272">
+  <rect width="480" height="272" fill="#041712"/>
+  <rect x="8" y="46" width="464" height="58" rx="11" fill="#0b211a" stroke="#21483c"/>
+  <rect x="8" y="110" width="464" height="154" rx="11" fill="#071c16" stroke="#21483c"/>
+  <text x="10" y="17" fill="#34d399" font-family="Arial,sans-serif" font-size="10" font-weight="700" letter-spacing="1.6">FELICITY IVGM</text>
+  <line x1="8" y1="39" x2="472" y2="39" stroke="#173c32"/>
+  <g fill="#18382f">
+    <rect x="20" y="128" width="1" height="118"/>
+    <rect x="128" y="128" width="1" height="118"/>
+    <rect x="236" y="128" width="1" height="118"/>
+    <rect x="344" y="128" width="1" height="118"/>
+    <rect x="452" y="128" width="1" height="118"/>
+    <rect x="20" y="157" width="432" height="1"/>
+    <rect x="20" y="187" width="432" height="1"/>
+    <rect x="20" y="217" width="432" height="1"/>
+    <rect x="20" y="246" width="432" height="1"/>
+  </g>
+</svg>
