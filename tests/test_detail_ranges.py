@@ -2,6 +2,9 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
+
+import sqlite3
 
 from database import (
     get_system_range,
@@ -13,6 +16,25 @@ from database import (
 
 
 class DetailRangeTests(unittest.TestCase):
+    def test_database_context_closes_every_connection(self) -> None:
+        real_connect = sqlite3.connect
+        opened = []
+
+        def tracked_connect(*args, **kwargs):
+            connection = real_connect(*args, **kwargs)
+            opened.append(connection)
+            return connection
+
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "felicity.db"
+            with patch("database.sqlite3.connect", side_effect=tracked_connect):
+                initialize_database(db_path)
+
+        self.assertTrue(opened)
+        for connection in opened:
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute("SELECT 1")
+
     def test_telemetry_range_is_evenly_sampled_and_keeps_edges(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "felicity.db"
