@@ -95,7 +95,7 @@
   <main class="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8 lg:py-9">
     <header class="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p class="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">Felicity IVGM · UI 0.7.0</p>
+        <p class="mb-2 text-xs font-semibold uppercase tracking-[.2em] text-emerald-400">Felicity IVGM · UI __FELICITY_APP_VERSION__</p>
         <h1 class="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Энергия дома</h1>
         <p class="mt-2 text-sm text-slate-500">Живые данные инвертора и история, которая хранится локально.</p>
       </div>
@@ -147,7 +147,7 @@
         <div>
           <p id="detail-kicker" class="text-xs font-semibold uppercase tracking-[.2em] text-amber-300">Подробный график</p>
           <h2 id="detail-title" class="mt-1 text-xl font-semibold text-white">Солнечная генерация</h2>
-          <p id="detail-subtitle" class="mt-1 text-xs text-slate-500">PV1, PV2 и напряжение MPPT · последние минуты</p>
+          <p id="detail-subtitle" class="mt-1 text-xs text-slate-500">Сумма, PV1, PV2 и напряжение MPPT · последние минуты</p>
           <p class="mt-2 text-xs text-slate-500"><span class="text-slate-400">Статистика разрывов:</span> <span id="detail-gap-status">рассчитывается…</span></p>
         </div>
         <div id="detail-scale" class="detail-scale flex flex-wrap rounded-xl border border-white/10 bg-black/10 p-1" role="group" aria-label="Масштаб подробного графика">
@@ -392,7 +392,7 @@
     historyChart.$visibilityScope = "history";
 
     const panelMeta = {
-      solar: { title: "Солнечная генерация", subtitle: "PV1, PV2 и напряжение MPPT", color: "text-amber-300", valueLabel: "текущая мощность" },
+      solar: { title: "Солнечная генерация", subtitle: "Сумма, PV1, PV2 и напряжение MPPT", color: "text-amber-300", valueLabel: "текущая мощность" },
       home: { title: "Потребление дома", subtitle: "Общая нагрузка и три фазы", color: "text-sky-300", valueLabel: "потребляет дом" },
       battery: { title: "Аккумулятор", subtitle: "SOC, мощность и напряжение", color: "text-emerald-300", valueLabel: "текущий заряд" },
       grid: { title: "Напряжение сети", subtitle: "Три фазы и импорт/экспорт", color: "text-violet-300", valueLabel: "среднее напряжение" },
@@ -420,7 +420,8 @@
       const rows = state.telemetry;
       if (state.panel === "solar") return {
         labels: [], datasets: [
-          { ...line("PV1, Вт", "#fbbf24", "power", true), parsing: false, data: detailSeries(rows, (row) => row.parsed.pv_power_w?.pv1) },
+          { ...line("Сумма, Вт", "#fde047", "power", true), parsing: false, data: detailSeries(rows, (row) => number(row.parsed.pv_power_w?.pv1) + number(row.parsed.pv_power_w?.pv2)) },
+          { ...line("PV1, Вт", "#fbbf24", "power"), parsing: false, data: detailSeries(rows, (row) => row.parsed.pv_power_w?.pv1) },
           { ...line("PV2, Вт", "#fb923c", "power"), parsing: false, data: detailSeries(rows, (row) => row.parsed.pv_power_w?.pv2) },
           { ...line("MPPT1, В", "#38bdf8", "voltage"), parsing: false, data: detailSeries(rows, (row) => row.parsed.pv_voltage_v?.mppt1) },
           { ...line("MPPT2, В", "#a78bfa", "voltage"), parsing: false, data: detailSeries(rows, (row) => row.parsed.pv_voltage_v?.mppt2) }
