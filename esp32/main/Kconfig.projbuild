@@ -9,7 +9,7 @@ config FELICITY_EMULATOR
 
 config FELICITY_API_BASE_URL
     string "Raspberry dashboard API base URL"
-    default "http://192.168.13.126:8000"
+    default "http://192.168.1.10:8000"
 
 config FELICITY_WIFI_SSID
     string "Temporary Wi-Fi SSID"

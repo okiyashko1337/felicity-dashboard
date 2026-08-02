@@ -29,8 +29,8 @@ portal provisioning will be added separately.
 The Home Assistant add-on must expose its HTTP port to the local network. In
 the add-on Network settings, map `8000/tcp` to host port `8000`, save, and
 restart the add-on. This is LAN-only access; no router port forwarding is
-needed. The default API URL for this installation is
-`http://192.168.13.126:8000`.
+needed. Set the API URL to the fixed or DHCP-reserved LAN address of the Home
+Assistant host, for example `http://192.168.1.10:8000`.
 
 ## Emulator build
 
