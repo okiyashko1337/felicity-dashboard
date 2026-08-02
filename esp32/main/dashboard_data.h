@@ -34,12 +34,13 @@ typedef struct {
     float today_grid_export_kwh;
 } dashboard_summary_t;
 
-#define DASHBOARD_CHART_MAX_SAMPLES 30
+#define DASHBOARD_CHART_MAX_SAMPLES 180
 #define DASHBOARD_CHART_MAX_CHANNELS 4
 
 typedef struct {
     size_t count;
     size_t channels;
+    bool valid[DASHBOARD_CHART_MAX_SAMPLES];
     float samples[DASHBOARD_CHART_MAX_SAMPLES][DASHBOARD_CHART_MAX_CHANNELS];
 } dashboard_chart_t;
 

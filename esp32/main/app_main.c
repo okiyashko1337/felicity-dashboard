@@ -141,7 +141,7 @@ void app_main(void)
 #endif
                 nextion_render_gaps(&gaps, gaps_live);
                 if (gaps_live) nextion_render_chart(page, &gaps.chart);
-                next_chart = now + pdMS_TO_TICKS(30000);
+                next_chart = now + pdMS_TO_TICKS(60000);
                 vTaskDelay(pdMS_TO_TICKS(20));
                 continue;
             }
@@ -153,7 +153,7 @@ void app_main(void)
             bool chart_ok = dashboard_fetch_chart(CONFIG_FELICITY_API_BASE_URL, metric, &chart);
 #endif
             if (chart_ok) nextion_render_chart(page, &chart);
-            next_chart = now + pdMS_TO_TICKS(30000);
+            next_chart = now + pdMS_TO_TICKS(page == DASH_PAGE_SYSTEM ? 10000 : 60000);
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }

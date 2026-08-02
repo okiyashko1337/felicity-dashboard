@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.4
+
+- Fix energy, battery, grid, daily, and gap charts to the full current day.
+- Use 180 eight-minute bins with an explicit `00-06-12-18-24` time axis.
+- Leave future and missing intervals empty instead of drawing misleading zeroes.
+- Give the System chart a detailed rolling ten-minute window with 60 ten-second bins.
+- Change the recommended Raspberry system collection interval to ten seconds.
+
 ## 0.10.3
 
 - Add a compact slow-changing System and Today summary endpoint for ESP32.

@@ -220,8 +220,22 @@ void nextion_render_chart(dashboard_page_t page, const dashboard_chart_t *chart)
     command("fill %d,%d,%d,%d,2307", left, top, right - left + 1, bottom - top + 1);
     for (int x = left; x <= right; x += 72) command("line %d,%d,%d,%d,6597", x, top, x, bottom);
     for (int y = top; y <= bottom; y += 30) command("line %d,%d,%d,%d,6597", left, y, right, y);
+    if (page == DASH_PAGE_SYSTEM) {
+        static const char *system_time[] = {"-10", "-5", "NOW"};
+        for (size_t index = 0; index < 3; ++index) {
+            int x = left + (int)index * (right - left) / 2 - 22;
+            text(x, 244, 44, 18, 2, 33840, 2307, system_time[index]);
+        }
+    } else {
+        static const char *hours[] = {"00", "06", "12", "18", "24"};
+        for (size_t index = 0; index < 5; ++index) {
+            int x = left + (int)index * (right - left) / 4 - 17;
+            text(x, 244, 34, 18, 2, 33840, 2307, hours[index]);
+        }
+    }
     if (!chart || chart->count < 2 || page > DASH_PAGE_GAPS) return;
     for (size_t i = 1; i < chart->count; ++i) {
+        if (!chart->valid[i - 1] || !chart->valid[i]) continue;
         int x1 = left + (int)((i - 1) * (right - left) / (chart->count - 1));
         int x2 = left + (int)(i * (right - left) / (chart->count - 1));
         for (size_t channel = 0; channel < chart->channels && channel < 4; ++channel) {

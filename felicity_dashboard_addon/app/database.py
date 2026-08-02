@@ -398,6 +398,52 @@ def get_telemetry_range_sampled(
     return [serialize_telemetry_row(row) for row in rows]
 
 
+def get_parsed_telemetry_range_sampled(
+    start: datetime,
+    end: datetime,
+    max_points: int,
+    db_path: Path = DB_PATH,
+) -> list[dict]:
+    """Evenly sample a range without reading large raw Modbus packets."""
+    start_utc = start.astimezone(timezone.utc).isoformat()
+    end_utc = end.astimezone(timezone.utc).isoformat()
+    with connect(db_path) as connection:
+        total = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM telemetry_snapshots
+                WHERE timestamp >= ? AND timestamp < ?
+                """,
+                (start_utc, end_utc),
+            ).fetchone()[0]
+        )
+        if total == 0:
+            return []
+        stride = max(1, math.ceil((total - 1) / max(1, max_points - 1)))
+        rows = connection.execute(
+            """
+            WITH ranked AS (
+                SELECT
+                    id, timestamp, parsed_data_json,
+                    ROW_NUMBER() OVER (ORDER BY timestamp ASC, id ASC) AS row_number,
+                    COUNT(*) OVER () AS total_count
+                FROM telemetry_snapshots
+                WHERE timestamp >= ? AND timestamp < ?
+            )
+            SELECT timestamp, parsed_data_json
+            FROM ranked
+            WHERE (row_number - 1) % ? = 0 OR row_number = total_count
+            ORDER BY timestamp ASC, id ASC
+            """,
+            (start_utc, end_utc, stride),
+        ).fetchall()
+    return [
+        {"timestamp": row["timestamp"], "parsed": json.loads(row["parsed_data_json"])}
+        for row in rows
+    ]
+
+
 def save_system_snapshot(
     data: dict,
     db_path: Path = DB_PATH,

@@ -149,7 +149,7 @@ def collect_system_metrics(db_path: Path = DB_PATH) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, default=DB_PATH)
-    parser.add_argument("--interval", type=float, default=60.0)
+    parser.add_argument("--interval", type=float, default=10.0)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
 
