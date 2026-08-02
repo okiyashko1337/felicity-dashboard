@@ -1,11 +1,12 @@
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import _device_chart_sample
+from app import _device_chart_sample, _gap_coverage_samples
 from database import (
     get_parsed_telemetry_history,
+    get_telemetry_timestamps,
     initialize_database,
     save_telemetry_snapshot,
 )
@@ -25,9 +26,15 @@ class DeviceApiTests(unittest.TestCase):
             )
 
             rows = get_parsed_telemetry_history(10, db_path)
+            timestamps = get_telemetry_timestamps(
+                datetime(2026, 8, 1, tzinfo=timezone.utc),
+                datetime(2026, 8, 3, tzinfo=timezone.utc),
+                db_path,
+            )
 
         self.assertEqual(rows[0]["parsed"], {"soc_percent": 42})
         self.assertNotIn("raw", rows[0])
+        self.assertEqual(timestamps, [{"timestamp": "2026-08-02T00:00:00+00:00"}])
 
     def test_chart_samples_match_nextion_series_order(self) -> None:
         parsed = {
@@ -46,6 +53,19 @@ class DeviceApiTests(unittest.TestCase):
             _device_chart_sample("grid", parsed),
             [230.1, 231.2, 229.8, 125],
         )
+
+    def test_gap_samples_report_coverage_per_bin(self) -> None:
+        start = datetime(2026, 8, 2, tzinfo=timezone.utc)
+        gaps = [{
+            "start": (start + timedelta(minutes=15)).isoformat(),
+            "end": (start + timedelta(minutes=30)).isoformat(),
+        }]
+
+        samples = _gap_coverage_samples(
+            gaps, start, start + timedelta(hours=1), count=4
+        )
+
+        self.assertEqual(samples, [[100.0], [0.0], [100.0], [100.0]])
 
 
 if __name__ == "__main__":

@@ -135,6 +135,44 @@ void nextion_render_detail(dashboard_page_t page, const dashboard_snapshot_t *s,
     text(18, 85, 446, 16, 2, 65535, 2307, c);
 }
 
+static void iso_hhmm(const char *iso, char *output, size_t output_size)
+{
+    const char *time = iso ? strchr(iso, 'T') : NULL;
+    if (time && strlen(time) >= 6) snprintf(output, output_size, "%.5s", time + 1);
+    else snprintf(output, output_size, "--:--");
+}
+
+static void duration_text(int seconds, char *output, size_t output_size)
+{
+    if (seconds < 60) snprintf(output, output_size, "%ds", seconds);
+    else if (seconds < 3600) snprintf(output, output_size, "%dm", seconds / 60);
+    else snprintf(output, output_size, "%dh %02dm", seconds / 3600, (seconds % 3600) / 60);
+}
+
+void nextion_render_gaps(const dashboard_gaps_t *gaps, bool live)
+{
+    char main[32], count[48], longest[48], latest[72];
+    char duration[24], start[8], end[8];
+    snprintf(main, sizeof(main), "%.1f%%", gaps->coverage_percent);
+    snprintf(count, sizeof(count), "GAPS  %d", gaps->gap_count);
+    duration_text(gaps->longest_gap_seconds, duration, sizeof(duration));
+    snprintf(longest, sizeof(longest), "LONGEST  %s", duration);
+    if (gaps->latest_start[0] && gaps->latest_end[0]) {
+        iso_hhmm(gaps->latest_start, start, sizeof(start));
+        iso_hhmm(gaps->latest_end, end, sizeof(end));
+        snprintf(latest, sizeof(latest), "LAST  %s - %s", start, end);
+    } else {
+        snprintf(latest, sizeof(latest), "NO GAPS");
+    }
+    text(30, 3, 50, 26, 2, 65519, 162, "BACK");
+    text(84, 3, 92, 26, 2, 65535, 162, "GAPS");
+    text(180, 3, 70, 26, 2, live ? 2016 : 63488, 162, live ? "LIVE" : "NO DATA");
+    text(18, 52, 145, 26, 3, 65535, 2307, main);
+    text(172, 50, 292, 18, 2, 65535, 2307, count);
+    text(172, 69, 292, 18, 2, 65535, 2307, longest);
+    text(18, 85, 446, 16, 2, 65535, 2307, latest);
+}
+
 static float chart_scaled(dashboard_page_t page, size_t channel, float value)
 {
     float minimum = 0.0f;
@@ -158,12 +196,13 @@ void nextion_render_chart(dashboard_page_t page, const dashboard_chart_t *chart)
         [DASH_PAGE_GRID] = {65535, 2016, 65519, 64495},
         [DASH_PAGE_SYSTEM] = {2016, 2047, 65519, 64495},
         [DASH_PAGE_TODAY] = {65519, 2047, 0, 0},
+        [DASH_PAGE_GAPS] = {2016, 0, 0, 0},
     };
     const int left = 60, top = 120, right = 420, bottom = 240;
     command("fill %d,%d,%d,%d,2307", left, top, right - left + 1, bottom - top + 1);
     for (int x = left; x <= right; x += 72) command("line %d,%d,%d,%d,6597", x, top, x, bottom);
     for (int y = top; y <= bottom; y += 30) command("line %d,%d,%d,%d,6597", left, y, right, y);
-    if (!chart || chart->count < 2 || page > DASH_PAGE_TODAY) return;
+    if (!chart || chart->count < 2 || page > DASH_PAGE_GAPS) return;
     for (size_t i = 1; i < chart->count; ++i) {
         int x1 = left + (int)((i - 1) * (right - left) / (chart->count - 1));
         int x2 = left + (int)(i * (right - left) / (chart->count - 1));

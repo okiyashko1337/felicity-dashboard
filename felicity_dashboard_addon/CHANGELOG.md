@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1
+
+- Add a compact timestamp-only API for today's telemetry coverage.
+- Complete the ESP32-C3 GAPS page with coverage, duration, latest interval, and graph rendering.
+- Include the GAPS page in deterministic QEMU navigation and keep its BACK touch behavior.
+
 ## 0.10.0
 
 - Add compact current-telemetry and chart endpoints for constrained IoT clients.

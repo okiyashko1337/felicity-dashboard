@@ -32,6 +32,10 @@ restart the add-on. This is LAN-only access; no router port forwarding is
 needed. Set the API URL to the fixed or DHCP-reserved LAN address of the Home
 Assistant host, for example `http://192.168.1.10:8000`.
 
+The client reads `/api/device/current`, `/api/device/chart`, and the
+timestamp-only `/api/device/gaps` endpoint. Tapping the date area opens the
+coverage page without loading full telemetry rows from SQLite.
+
 ## Emulator build
 
 The emulator configuration avoids Wi-Fi and prints every Nextion command as an
