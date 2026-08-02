@@ -393,9 +393,7 @@ class NextionBridgeTests(unittest.TestCase):
 
         self.assertEqual(transport.text[("pv", "tMain")], "210 W")
         self.assertEqual(transport.text[("pv", "tYTop")], "15kW")
-        self.assertEqual(transport.text[("pv", "tXLeft")], "00:00")
-        self.assertEqual(transport.text[("pv", "tXMid")], "12:00")
-        self.assertEqual(transport.text[("pv", "tXRight")], "24:00")
+        self.assertEqual(transport.text[("pv", "tXRight")], "15:09")
         self.assertFalse(any(command.startswith("line ") for command in transport.commands))
         self.assertEqual(len(dashboard.chart_replays["pv"]), 2)
 
@@ -414,7 +412,7 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(dashboard.chart_replays["pv"][-1], (89, 89, 89))
         self.assertEqual(dashboard.chart_replays["pv"][0], (60, 60, 60))
 
-    def test_detail_fallback_keeps_fixed_day_axis_while_chart_loads(self) -> None:
+    def test_time_axis_ends_below_actual_graph_endpoint_without_overlap(self) -> None:
         now = datetime(2026, 8, 2, 7, 32, 14, tzinfo=timezone.utc)
         transport = RecordingTransport()
         dashboard = NextionDashboard(transport, UnusedApi(), clock=lambda: now)
@@ -424,9 +422,8 @@ class NextionBridgeTests(unittest.TestCase):
         dashboard.begin_waveform_replay()
 
         self.assertIn("fill 58,245,364,18,2307", transport.commands)
-        self.assertEqual(transport.text[("pv", "tXLeft")], "00:00")
-        self.assertEqual(transport.text[("pv", "tXMid")], "12:00")
-        self.assertEqual(transport.text[("pv", "tXRight")], "24:00")
+        self.assertEqual(transport.text[("pv", "tXRight")], "07:32")
+        self.assertEqual(transport.text[("pv", "tXLeft")], "07:31")
 
     def test_gap_page_uses_incremental_lines_and_day_timescale(self) -> None:
         now = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)

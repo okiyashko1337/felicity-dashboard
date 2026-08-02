@@ -1,11 +1,5 @@
 # Changelog
 
-## 0.10.7
-
-- Keep daily detail pages on a fixed `00:00/12:00/24:00` axis from the first frame.
-- Keep System on `-10m/-5m/NOW` even while its compact chart is still loading.
-- Never fall back to the old moving time axis when the chart API is delayed.
-
 ## 0.10.6
 
 - Refresh only the graph plot when compact chart data changes.
