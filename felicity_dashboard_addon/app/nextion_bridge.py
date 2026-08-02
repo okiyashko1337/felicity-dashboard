@@ -508,7 +508,6 @@ class NextionDashboard:
                     if self.page == metric:
                         # A compact chart refresh must not repaint the whole page:
                         # doing so made the fixed time labels flash every 10/60 s.
-                        self.reset_chart_sweep(metric)
                         self.begin_waveform_replay()
         return replay_page
 
@@ -621,6 +620,11 @@ class NextionDashboard:
         return samples[-CHART_HISTORY_MAX_POINTS:]
 
     @staticmethod
+    def chart_right(page: str) -> int:
+        """Keep the original plot width and its reserved scale margins."""
+        return CHART_RIGHT
+
+    @staticmethod
     def scale_device_chart(page: str, rows: list) -> list[tuple[int, ...] | None]:
         """Convert compact API values to Nextion's 0-255 chart coordinates."""
         scaled_rows: list[tuple[int, ...] | None] = []
@@ -648,6 +652,10 @@ class NextionDashboard:
 
     def begin_waveform_replay(self) -> None:
         """Prepare a chart replay without blocking current-value rendering."""
+        # Clear the real Nextion waveform buffer first. A manual fill leaves the
+        # component's old buffer alive, so it can repaint the previous graph on
+        # top of the new daily history.
+        self.transport.clear_waveform()
         fixed_chart = self.device_charts.get(self.page)
         if self.page in DETAIL_PAGES and fixed_chart:
             samples = self.scale_device_chart(self.page, fixed_chart.get("samples", []))
@@ -684,16 +692,16 @@ class NextionDashboard:
         self.chart_start_time[self.page] = start
         self.chart_end_time[self.page] = now
         if self.page in DETAIL_PAGES:
-            projected_x = CHART_RIGHT
+            projected_x = self.chart_right(self.page)
             self.render_fixed_time_axis(self.page)
         else:
             projected_x = min(
-                CHART_RIGHT,
+                self.chart_right(self.page),
                 CHART_LEFT + max(0, len(samples) - 1) * CHART_REPLAY_STEP,
             )
         if self.page == "gaps":
             day_end = start + timedelta(days=1) - timedelta(minutes=1)
-            self.render_time_axis(self.page, CHART_RIGHT, start, day_end)
+            self.render_time_axis(self.page, self.chart_right(self.page), start, day_end)
         elif self.page not in DETAIL_PAGES:
             self.render_time_axis(self.page, projected_x, start, now)
 
@@ -713,7 +721,8 @@ class NextionDashboard:
             if self.page in self.fixed_chart_replays:
                 index, sample = item
                 count = max(2, len(self.device_charts[self.page].get("samples", [])))
-                x = CHART_LEFT + round(index * (CHART_RIGHT - CHART_LEFT) / (count - 1))
+                chart_right = self.chart_right(self.page)
+                x = CHART_LEFT + round(index * (chart_right - CHART_LEFT) / (count - 1))
                 previous = self.chart_previous.get(self.page)
                 previous_index = self.chart_previous_index.get(self.page)
                 if sample is None:
@@ -725,7 +734,7 @@ class NextionDashboard:
                     self.chart_previous_index[self.page] = index
                 else:
                     previous_x = CHART_LEFT + round(
-                        previous_index * (CHART_RIGHT - CHART_LEFT) / (count - 1)
+                        previous_index * (chart_right - CHART_LEFT) / (count - 1)
                     )
                     self.draw_chart_segment(self.page, previous_x, previous, x, sample)
                     self.chart_previous[self.page] = sample
@@ -737,9 +746,9 @@ class NextionDashboard:
             x = self.chart_x.get(self.page, CHART_LEFT)
             if previous is None:
                 self.draw_chart_segment(self.page, x, sample, x, sample)
-            elif x < CHART_RIGHT:
+            elif x < self.chart_right(self.page):
                 step = CHART_REPLAY_STEP
-                next_x = min(CHART_RIGHT, x + step)
+                next_x = min(self.chart_right(self.page), x + step)
                 self.draw_chart_segment(self.page, x, previous, next_x, sample)
                 x = next_x
             self.chart_x[self.page] = x
@@ -809,7 +818,7 @@ class NextionDashboard:
             self.draw_chart_segment(self.page, x, sample, x, sample)
             self.chart_previous[self.page] = sample
             return
-        if x >= CHART_RIGHT:
+        if x >= self.chart_right(self.page):
             self.reset_chart_sweep(self.page)
             x = CHART_LEFT
             previous = None
@@ -820,7 +829,7 @@ class NextionDashboard:
             self.chart_end_time[self.page] = self.clock()
             self.render_fixed_time_axis(self.page)
             return
-        next_x = min(CHART_RIGHT, x + CHART_STEP)
+        next_x = min(self.chart_right(self.page), x + CHART_STEP)
         self.draw_chart_segment(self.page, x, previous, next_x, sample)
         self.chart_x[self.page] = next_x
         self.chart_previous[self.page] = sample
@@ -828,14 +837,7 @@ class NextionDashboard:
 
     def reset_chart_sweep(self, page: str) -> None:
         """Clear only the plot, preserving the header and live value cards."""
-        self.transport.command(
-            f"fill {CHART_LEFT},{CHART_TOP},{CHART_RIGHT - CHART_LEFT + 1},"
-            f"{CHART_BOTTOM - CHART_TOP + 1},2307"
-        )
-        for x in range(CHART_LEFT, CHART_RIGHT + 1, 72):
-            self.transport.command(f"line {x},{CHART_TOP},{x},{CHART_BOTTOM},2016")
-        for y in range(CHART_TOP, CHART_BOTTOM + 1, 30):
-            self.transport.command(f"line {CHART_LEFT},{y},{CHART_RIGHT},{y},2016")
+        self.transport.clear_waveform()
         self.chart_x[page] = CHART_LEFT
         self.chart_previous.pop(page, None)
         now = self.clock()
@@ -956,17 +958,6 @@ class NextionDashboard:
         self.transport.command("line 8,32,472,32,2047")
         self.transport.command("fill 10,42,460,64,2307")
         self.transport.command("draw 10,42,469,105,8775")
-        self.transport.command(
-            f"fill {CHART_LEFT},{CHART_TOP},{CHART_RIGHT - CHART_LEFT + 1},"
-            f"{CHART_BOTTOM - CHART_TOP + 1},2307"
-        )
-        self.transport.command(
-            f"draw {CHART_LEFT},{CHART_TOP},{CHART_RIGHT},{CHART_BOTTOM},8775"
-        )
-        for x in range(CHART_LEFT, CHART_RIGHT + 1, 72):
-            self.transport.command(f"line {x},{CHART_TOP},{x},{CHART_BOTTOM},6597")
-        for y in range(CHART_TOP, CHART_BOTTOM + 1, 30):
-            self.transport.command(f"line {CHART_LEFT},{y},{CHART_RIGHT},{y},6597")
 
     def render_chart_axes(self, page: str) -> None:
         labels = CHART_AXIS_LABELS.get(page)
@@ -990,7 +981,7 @@ class NextionDashboard:
         if page == "gaps":
             start = datetime.combine(now.date(), datetime_time.min, tzinfo=now.tzinfo)
             now = start + timedelta(days=1) - timedelta(minutes=1)
-            end_x = CHART_RIGHT
+            end_x = self.chart_right(page)
         else:
             sample_count = min(len(self.histories.get(page, ())), CHART_HISTORY_MAX_POINTS)
             history_seconds = max(0.0, (sample_count - 1) * self.live_interval)
@@ -1009,8 +1000,9 @@ class NextionDashboard:
         if self.chart_axis_signature.get(page) == signature:
             return
         self.chart_axis_signature[page] = signature
-        self.transport.command("fill 58,245,364,18,2307")
-        positions = (CHART_LEFT, 214, CHART_RIGHT - 52)
+        chart_right = self.chart_right(page)
+        self.transport.command(f"fill 58,245,{chart_right - 56},18,2307")
+        positions = (CHART_LEFT, round((CHART_LEFT + chart_right - 52) / 2), chart_right - 52)
         for component, value, x in zip(
             ("tXLeft", "tXMid", "tXRight"), values, positions
         ):
@@ -1028,12 +1020,12 @@ class NextionDashboard:
         """Keep time labels clean and aligned with the actual line endpoint."""
         start = start or self.chart_start_time.get(page) or self.clock()
         end = end or self.chart_end_time.get(page) or self.clock()
-        end_x = max(CHART_LEFT, min(CHART_RIGHT, end_x))
-        self.transport.command("fill 58,245,364,18,2307")
-
+        chart_right = self.chart_right(page)
+        end_x = max(CHART_LEFT, min(chart_right, end_x))
         label_width = 52
+        self.transport.command(f"fill 58,245,{chart_right - 56},18,2307")
         left_x = CHART_LEFT
-        right_x = max(left_x, min(CHART_RIGHT - label_width, end_x - label_width // 2))
+        right_x = max(left_x, min(chart_right - label_width, end_x - label_width // 2))
         midpoint_x = round((CHART_LEFT + end_x) / 2 - label_width / 2)
         midpoint = start + (end - start) / 2
         labels: list[tuple[str, datetime, int]] = []
