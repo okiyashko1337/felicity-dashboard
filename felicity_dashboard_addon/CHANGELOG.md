@@ -1,22 +1,10 @@
 # Changelog
 
-## 0.10.8
+## 0.10.9
 
-- Clear the native Nextion waveform buffer before replaying stored history.
-- Preserve the original HMI grid instead of drawing a second inset grid.
-- Preserve the original line geometry and its reserved axis margins.
-
-## 0.10.7
-
-- Keep daily detail pages on a fixed `00:00/12:00/24:00` axis from the first frame.
-- Keep System on `-10m/-5m/NOW` even while its compact chart is still loading.
-- Never fall back to the old moving time axis when the chart API is delayed.
-
-## 0.10.6
-
-- Refresh only the graph plot when compact chart data changes.
-- Keep fixed time-axis labels untouched during live clock and chart updates.
-- Eliminate the periodic `00:00/12:00/24:00` and System-axis flicker.
+- Roll the Raspberry-to-Nextion bridge back exactly to the proven 0.10.5 implementation.
+- Restore immediate value, header, BACK label, and graph-line rendering.
+- Accept the earlier time-axis label flicker in preference to display regressions.
 
 ## 0.10.5
 
