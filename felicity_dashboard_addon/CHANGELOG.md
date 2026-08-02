@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- Add compact current-telemetry and chart endpoints for constrained IoT clients.
+- Add an ESP32-C3 client for the existing NX4827P043 Nextion dashboard.
+- Preserve touch navigation and render live detail graphs without a local Raspberry Pi display bridge.
+- Add separate hardware and deterministic QEMU builds plus native touch-frame parser tests.
+
 ## 0.9.5
 
 - Keep touch input responsive while API requests run in bounded background workers.

@@ -18,6 +18,7 @@ from database import (
     get_latest_system_snapshot,
     get_system_range,
     get_system_history,
+    get_parsed_telemetry_history,
     get_telemetry_history,
     get_telemetry_range,
     get_telemetry_range_sampled,
@@ -63,6 +64,77 @@ def current() -> dict:
             detail="No telemetry yet. Start collector.py or simulator.py.",
         )
     return snapshot
+
+
+@app.get("/api/device/current")
+def device_current() -> dict:
+    """Return the latest snapshot without raw packets for constrained clients."""
+    snapshot = get_latest_telemetry(DB_PATH)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="No telemetry yet")
+    return {
+        "id": snapshot["id"],
+        "timestamp": snapshot["timestamp"],
+        "source": snapshot["source"],
+        "parsed": snapshot["parsed"],
+    }
+
+
+def _value(data: dict, *path: str) -> float:
+    current = data
+    for key in path:
+        if not isinstance(current, dict):
+            return 0.0
+        current = current.get(key)
+    try:
+        return float(current or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _device_chart_sample(metric: str, data: dict) -> list[float]:
+    if metric == "pv":
+        return [_value(data, "pv_power_w", key) for key in ("total", "pv1", "pv2")]
+    if metric == "load":
+        return [_value(data, "load_power_w", key) for key in ("total", "l1", "l2", "l3")]
+    if metric == "battery":
+        return [_value(data, "soc_percent"), _value(data, "battery_power_w")]
+    if metric == "grid":
+        return [
+            *[_value(data, "grid_voltage_v", key) for key in ("l1", "l2", "l3")],
+            _value(data, "grid_power_w", "total"),
+        ]
+    if metric == "today":
+        return [_value(data, "pv_power_w", "total"), _value(data, "load_power_w", "total")]
+    raise HTTPException(status_code=422, detail=f"Unsupported chart metric: {metric}")
+
+
+@app.get("/api/device/chart")
+def device_chart(
+    metric: Literal["pv", "load", "battery", "grid", "system", "today"],
+    limit: int = Query(default=90, ge=2, le=180),
+) -> dict:
+    """Return compact chart samples tailored to the Nextion client."""
+    if metric == "system":
+        rows = get_system_history(limit, DB_PATH)
+        samples = [
+            [
+                _value(row["data"], "cpu_percent"),
+                _value(row["data"], "memory", "percent"),
+                _value(row["data"], "cpu_temperature_c"),
+                _value(row["data"], "disk", "percent"),
+            ]
+            for row in rows
+        ]
+    else:
+        rows = get_parsed_telemetry_history(limit, DB_PATH)
+        samples = [_device_chart_sample(metric, row["parsed"]) for row in rows]
+    return {
+        "metric": metric,
+        "start": rows[0]["timestamp"] if rows else None,
+        "end": rows[-1]["timestamp"] if rows else None,
+        "samples": samples,
+    }
 
 
 @app.get("/api/history")

@@ -281,6 +281,30 @@ def get_telemetry_history(
     return [serialize_telemetry_row(row) for row in reversed(rows)]
 
 
+def get_parsed_telemetry_history(
+    limit: int,
+    db_path: Path = DB_PATH,
+) -> list[dict]:
+    """Return recent telemetry without the large raw inverter packets."""
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT timestamp, parsed_data_json
+            FROM telemetry_snapshots
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [
+        {
+            "timestamp": row["timestamp"],
+            "parsed": json.loads(row["parsed_data_json"]),
+        }
+        for row in reversed(rows)
+    ]
+
+
 def get_telemetry_range(
     start: datetime,
     end: datetime,
