@@ -683,7 +683,7 @@ class NextionDashboard:
         self.chart_previous_index.pop(self.page, None)
         self.chart_start_time[self.page] = start
         self.chart_end_time[self.page] = now
-        if fixed_chart:
+        if self.page in DETAIL_PAGES:
             projected_x = CHART_RIGHT
             self.render_fixed_time_axis(self.page)
         else:
@@ -694,7 +694,7 @@ class NextionDashboard:
         if self.page == "gaps":
             day_end = start + timedelta(days=1) - timedelta(minutes=1)
             self.render_time_axis(self.page, CHART_RIGHT, start, day_end)
-        elif not fixed_chart:
+        elif self.page not in DETAIL_PAGES:
             self.render_time_axis(self.page, projected_x, start, now)
 
     def advance_waveform_replay(self, max_samples: int = CHART_REPLAY_SAMPLES_PER_TICK) -> bool:
@@ -818,17 +818,13 @@ class NextionDashboard:
             self.chart_previous[self.page] = sample
             self.chart_start_time[self.page] = self.clock()
             self.chart_end_time[self.page] = self.clock()
-            self.render_time_axis(self.page, x)
+            self.render_fixed_time_axis(self.page)
             return
         next_x = min(CHART_RIGHT, x + CHART_STEP)
         self.draw_chart_segment(self.page, x, previous, next_x, sample)
         self.chart_x[self.page] = next_x
         self.chart_previous[self.page] = sample
         self.chart_end_time[self.page] = self.clock()
-        bucket = int(self.clock().timestamp() // 10)
-        if self.chart_axis_bucket.get(self.page) != bucket:
-            self.chart_axis_bucket[self.page] = bucket
-            self.render_time_axis(self.page, next_x)
 
     def reset_chart_sweep(self, page: str) -> None:
         """Clear only the plot, preserving the header and live value cards."""
@@ -987,7 +983,7 @@ class NextionDashboard:
             for component, value in zip(("tY2Top", "tY2Mid", "tY2Bottom"), right_labels):
                 self.transport.set_color(page, component, 31727)
                 self.transport.set_text(page, component, value)
-        if page in self.device_charts:
+        if page in DETAIL_PAGES:
             self.render_fixed_time_axis(page)
             return
         now = self.clock()
