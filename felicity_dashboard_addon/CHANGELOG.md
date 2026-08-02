@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.2
+
+- Use the Home Assistant build version as the single UI and app version source.
+- Inject the version into the dashboard HTML, status API, and no-cache response header.
+- Remove the stale hard-coded UI 0.7.0 marker.
+- Add a client-side total solar-power line computed from PV1 and PV2 without new database fields.
+
 ## 0.10.1
 
 - Add a compact timestamp-only API for today's telemetry coverage.

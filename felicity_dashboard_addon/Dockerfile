@@ -5,6 +5,8 @@ FROM ${BUILD_FROM}
 ARG BUILD_VERSION
 ARG BUILD_ARCH
 
+ENV FELICITY_APP_VERSION=${BUILD_VERSION}
+
 RUN apk add --no-cache python3 py3-pip \
     && python3 -m venv /opt/felicity-venv
 

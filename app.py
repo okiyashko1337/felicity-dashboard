@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 
 from config import DB_PATH
 from analytics import build_energy_analytics, build_gap_statistics, build_period_analytics
@@ -29,12 +30,12 @@ from database import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-UI_VERSION = "0.7.0"
+APP_VERSION = os.environ.get("FELICITY_APP_VERSION", "dev")
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
     "Expires": "0",
-    "X-Felicity-UI-Version": UI_VERSION,
+    "X-Felicity-UI-Version": APP_VERSION,
 }
 
 
@@ -49,8 +50,12 @@ app = FastAPI(title="Felicity Energy Dashboard API", lifespan=lifespan)
 
 
 @app.get("/", include_in_schema=False)
-def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html", headers=NO_CACHE_HEADERS)
+def index() -> HTMLResponse:
+    html = (STATIC_DIR / "index.html").read_text()
+    return HTMLResponse(
+        html.replace("__FELICITY_APP_VERSION__", APP_VERSION),
+        headers=NO_CACHE_HEADERS,
+    )
 
 
 @app.get("/api/current")
@@ -295,7 +300,12 @@ def analytics_day_summary(day: date) -> dict:
 def status() -> dict:
     snapshot = get_latest_telemetry(DB_PATH)
     if snapshot is None:
-        return {"online": False, "source": None, "age_seconds": None}
+        return {
+            "online": False,
+            "source": None,
+            "age_seconds": None,
+            "app_version": APP_VERSION,
+        }
 
     timestamp = datetime.fromisoformat(snapshot["timestamp"])
     age_seconds = max(
@@ -306,6 +316,7 @@ def status() -> dict:
         "online": age_seconds <= 10,
         "source": snapshot["source"],
         "age_seconds": round(age_seconds, 1),
+        "app_version": APP_VERSION,
     }
 
 
