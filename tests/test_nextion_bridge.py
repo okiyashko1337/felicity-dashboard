@@ -88,6 +88,7 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(transport.text[("home", "tDayV")], "12.4kWh")
         self.assertEqual(transport.text[("home", "tDayS")], "L8.0 C155%")
         self.assertEqual(transport.text[("home", "tSysTitle")], "SYSTEM")
+        self.assertEqual(transport.colors[("home", "tSysTitle")], 2047)
         self.assertEqual(transport.text[("home", "tFresh")], "LIVE")
         self.assertEqual(transport.text[("home", "tTime")], "15:09:13")
 
@@ -257,6 +258,39 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(transport.text[("system", "tTitle")], "SYSTEM")
         self.assertEqual(transport.colors[("system", "tMain")], 2016)
         self.assertEqual(transport.colors[("system", "tC")], 64495)
+
+    def test_battery_page_uses_dark_canvas_and_colored_metrics(self) -> None:
+        now = datetime(2026, 8, 2, 8, 47, tzinfo=timezone.utc)
+        transport = RecordingTransport()
+        dashboard = NextionDashboard(transport, UnusedApi(), clock=lambda: now)
+        dashboard.page = "battery"
+        dashboard.live = {
+            "timestamp": now.isoformat(),
+            "parsed": {
+                "soc_percent": 74,
+                "battery_voltage_v": 51.4,
+                "battery_current_a": -38.2,
+                "battery_power_w": -1963,
+            },
+        }
+
+        dashboard.render_page(replay=True)
+
+        self.assertIn("fill 0,0,480,272,162", transport.commands)
+        self.assertEqual(transport.colors[("battery", "tMain")], 65519)
+        self.assertEqual(transport.colors[("battery", "tB")], 64495)
+
+    def test_detail_header_erases_legacy_logo_before_redrawing(self) -> None:
+        now = datetime(2026, 8, 2, 8, 47, tzinfo=timezone.utc)
+        transport = RecordingTransport()
+        dashboard = NextionDashboard(transport, UnusedApi(), clock=lambda: now)
+        dashboard.page = "pv"
+        dashboard.live = {"timestamp": now.isoformat(), "parsed": {}}
+
+        dashboard.render_page(replay=True)
+
+        self.assertIn("fill 0,0,178,32,162", transport.commands)
+        self.assertEqual(transport.text[("pv", "tBrand")], "FELICITY")
 
     def test_duration_is_compact_for_small_display(self) -> None:
         self.assertEqual(format_duration(42), "42s")
