@@ -32,13 +32,13 @@ PAGE_NAMES = {
 DETAIL_PAGES = {"pv", "load", "battery", "grid", "system", "today"}
 WAVEFORM_COMPONENT_ID = 2
 HISTORY_LENGTH = 90
-CHART_LEFT = 14
-CHART_TOP = 107
-CHART_RIGHT = 465
-CHART_BOTTOM = 262
+CHART_LEFT = 60
+CHART_TOP = 120
+CHART_RIGHT = 420
+CHART_BOTTOM = 240
 CHART_STEP = 4
-CHART_HISTORY_MAX_POINTS = 45
-CHART_REPLAY_SAMPLES_PER_TICK = 1
+CHART_HISTORY_MAX_POINTS = 30
+CHART_REPLAY_SAMPLES_PER_TICK = 3
 CHART_COLORS = {
     "pv": (65519, 64495, 2047),
     "load": (65535, 2016, 65519, 2047),
@@ -46,6 +46,22 @@ CHART_COLORS = {
     "grid": (65535, 2016, 65519, 64495),
     "system": (2016, 2047, 65519),
     "today": (65519, 2047),
+}
+CHART_AXIS_LABELS = {
+    "pv": ("15kW", "7.5k", "0"),
+    "load": ("15kW", "7.5k", "0"),
+    "battery": ("100%", "50%", "0%"),
+    "grid": ("260V", "220V", "180V"),
+    "system": ("100", "50", "0"),
+    "today": ("15kW", "7.5k", "0"),
+}
+CHART_RIGHT_AXIS_LABELS = {
+    "battery": ("+15k", "0", "-15k"),
+    "grid": ("+15k", "0", "-15k"),
+}
+TRANSPARENT_TEXT_COMPONENTS = {
+    "tYTop", "tYMid", "tYBottom", "tY2Top", "tY2Mid", "tY2Bottom",
+    "tXLeft", "tXMid", "tXRight",
 }
 
 # The HMI contains only bitmap backgrounds and waveforms.  Text is drawn with
@@ -57,6 +73,7 @@ TEXT_LAYOUTS = {
         "tTime": (375, 3, 98, 26),
     },
     "home": {
+        "tSysTitle": (175, 164, 132, 20),
         "tPvV": (18, 80, 132, 28),
         "tPvS": (18, 116, 134, 26),
         "tLoadV": (175, 80, 132, 28),
@@ -77,6 +94,15 @@ TEXT_LAYOUTS = {
         "tA": (172, 50, 292, 18),
         "tB": (172, 69, 292, 18),
         "tC": (18, 85, 446, 16),
+        "tYTop": (15, 111, 42, 14),
+        "tYMid": (15, 179, 42, 14),
+        "tYBottom": (15, 245, 42, 14),
+        "tY2Top": (424, 111, 42, 14),
+        "tY2Mid": (424, 179, 42, 14),
+        "tY2Bottom": (424, 245, 42, 14),
+        "tXLeft": (60, 247, 52, 14),
+        "tXMid": (214, 247, 52, 14),
+        "tXRight": (368, 247, 52, 14),
     },
 }
 
@@ -229,7 +255,10 @@ class NextionTransport:
         if page != "home" and component in {"tMain", "tA", "tB", "tC"}:
             background = 2307
         safe = rendered.replace("\\", "/").replace('"', "'")
-        self.command(f'xstr {x},{y},{width},{height},0,{color},{background},0,1,1,"{safe}"')
+        style = 3 if component in TRANSPARENT_TEXT_COMPONENTS else 1
+        self.command(
+            f'xstr {x},{y},{width},{height},0,{color},{background},0,1,{style},"{safe}"'
+        )
 
     def set_color(self, page: str, component: str, rgb565: int) -> None:
         key = (page, component)
@@ -400,14 +429,14 @@ class NextionDashboard:
         system = (self.system_data or {}).get("data", {})
         self.histories["pv"].append((
             scale(pv.get("total"), 0, 15000),
-            scale(pv.get("pv1"), 0, 7500),
-            scale(pv.get("pv2"), 0, 7500),
+            scale(pv.get("pv1"), 0, 15000),
+            scale(pv.get("pv2"), 0, 15000),
         ))
         self.histories["load"].append((
             scale(load.get("total"), 0, 15000),
-            scale(load.get("l1"), 0, 5000),
-            scale(load.get("l2"), 0, 5000),
-            scale(load.get("l3"), 0, 5000),
+            scale(load.get("l1"), 0, 15000),
+            scale(load.get("l2"), 0, 15000),
+            scale(load.get("l3"), 0, 15000),
         ))
         self.histories["battery"].append((
             scale(data.get("soc_percent"), 0, 100),
@@ -550,6 +579,10 @@ class NextionDashboard:
         self.transport.set_text("home", "tGridV", f"{text_number(average([grid_v.get('l1'), grid_v.get('l2'), grid_v.get('l3')]), 1)}V")
         self.transport.set_text("home", "tGridS", f"{text_number(grid_w.get('total'))}W {text_number(data.get('grid_frequency_hz'), 0)}Hz")
         system = (self.system_data or {}).get("data", {})
+        # Keep this label dynamic so older HMI backgrounds saying
+        # "RASPBERRY PI" are corrected without requiring another asset flash.
+        self.transport.set_color("home", "tSysTitle", 44373)
+        self.transport.set_text("home", "tSysTitle", "SYSTEM")
         self.transport.set_text("home", "tSysV", f"{text_number(system.get('cpu_percent'), 0)}%")
         self.transport.set_text("home", "tSysS", f"R{text_number(nested(system, 'memory', 'percent'), 0)} T{text_number(system.get('cpu_temperature_c'), 0)} D{text_number(nested(system, 'disk', 'percent'), 0)}")
         stats = (self.today_data or {}).get("stats", {})
@@ -595,6 +628,32 @@ class NextionDashboard:
         self.transport.set_text(page, "tTitle", page.upper())
         for component, value in zip(("tMain", "tA", "tB", "tC"), values):
             self.transport.set_text(page, component, value)
+        self.render_chart_axes(page)
+
+    def render_chart_axes(self, page: str) -> None:
+        labels = CHART_AXIS_LABELS.get(page)
+        if not labels:
+            return
+        for component in (
+            "tYTop", "tYMid", "tYBottom", "tXLeft", "tXMid", "tXRight",
+        ):
+            self.transport.set_color(page, component, 31727)
+        for component, value in zip(("tYTop", "tYMid", "tYBottom"), labels):
+            self.transport.set_text(page, component, value)
+        right_labels = CHART_RIGHT_AXIS_LABELS.get(page)
+        if right_labels:
+            for component, value in zip(("tY2Top", "tY2Mid", "tY2Bottom"), right_labels):
+                self.transport.set_color(page, component, 31727)
+                self.transport.set_text(page, component, value)
+        now = self.clock()
+        sample_count = len(self.histories.get(page, ()))
+        history_seconds = max(0.0, (sample_count - 1) * self.live_interval)
+        start = now - timedelta(seconds=history_seconds)
+        midpoint = start + timedelta(seconds=history_seconds / 2)
+        for component, moment in zip(
+            ("tXLeft", "tXMid", "tXRight"), (start, midpoint, now),
+        ):
+            self.transport.set_text(page, component, moment.strftime("%H:%M"))
 
     def render_gaps(self) -> None:
         gaps = (self.today_data or {}).get("gap_statistics", {})

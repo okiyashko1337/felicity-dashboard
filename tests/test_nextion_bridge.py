@@ -84,6 +84,7 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(transport.text[("home", "tPvV")], "3100W")
         self.assertEqual(transport.text[("home", "tDayV")], "12.4kWh")
         self.assertEqual(transport.text[("home", "tDayS")], "L8.0 C155%")
+        self.assertEqual(transport.text[("home", "tSysTitle")], "SYSTEM")
         self.assertEqual(transport.text[("home", "tFresh")], "LIVE")
         self.assertEqual(transport.text[("home", "tTime")], "15:09:13")
 
@@ -124,12 +125,12 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(
             transport.commands,
             [
-                "line 14,256,14,256,65519",
-                "line 14,250,14,250,64495",
-                "line 14,244,14,244,2047",
-                "line 14,256,18,255,65519",
-                "line 14,250,18,249,64495",
-                "line 14,244,18,243,2047",
+                "line 60,235,60,235,65519",
+                "line 60,231,60,231,64495",
+                "line 60,226,60,226,2047",
+                "line 60,235,64,235,65519",
+                "line 60,231,64,230,64495",
+                "line 60,226,64,225,2047",
             ],
         )
         self.assertEqual(transport.waveform, [])
@@ -152,6 +153,8 @@ class NextionBridgeTests(unittest.TestCase):
         dashboard.render_page(replay=True)
 
         self.assertEqual(transport.text[("pv", "tMain")], "210 W")
+        self.assertEqual(transport.text[("pv", "tYTop")], "15kW")
+        self.assertEqual(transport.text[("pv", "tXRight")], "15:09")
         self.assertFalse(any(command.startswith("line ") for command in transport.commands))
         self.assertEqual(len(dashboard.chart_replays["pv"]), 2)
 
@@ -166,7 +169,7 @@ class NextionBridgeTests(unittest.TestCase):
 
         dashboard.begin_waveform_replay()
 
-        self.assertLessEqual(len(dashboard.chart_replays["pv"]), 45)
+        self.assertLessEqual(len(dashboard.chart_replays["pv"]), 30)
         self.assertEqual(dashboard.chart_replays["pv"][-1], (89, 89, 89))
 
     def test_duration_is_compact_for_small_display(self) -> None:
