@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from concurrent.futures import Future
 from datetime import datetime, timedelta, timezone
 from threading import Event
 
@@ -9,7 +8,6 @@ from nextion_bridge import (
     FelicityApi,
     NextionDashboard,
     NextionFrameParser,
-    NextionTransport,
     coverage_bins,
     format_duration,
 )
@@ -51,14 +49,6 @@ class RecordingTransport:
 
     def invalidate_page(self, page=None) -> None:
         pass
-
-
-class RecordingConnection:
-    def __init__(self) -> None:
-        self.writes: list[bytes] = []
-
-    def write(self, value: bytes) -> None:
-        self.writes.append(value)
 
 
 class UnusedApi:
@@ -276,104 +266,6 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(transport.text[("load", "tXLeft")], "00:00")
         self.assertEqual(transport.text[("load", "tXMid")], "12:00")
         self.assertEqual(transport.text[("load", "tXRight")], "24:00")
-
-    def test_fixed_time_axis_is_not_repainted_when_chart_refreshes(self) -> None:
-        transport = RecordingTransport()
-        dashboard = NextionDashboard(transport, UnusedApi())
-        dashboard.page = "load"
-
-        dashboard.render_fixed_time_axis("load")
-        first_commands = list(transport.commands)
-        dashboard.render_fixed_time_axis("load")
-
-        self.assertEqual(transport.commands, first_commands)
-
-    def test_unchanged_detail_values_send_no_uart_commands(self) -> None:
-        connection = RecordingConnection()
-        transport = NextionTransport("unused", 115200)
-        transport.connection = connection
-        dashboard = NextionDashboard(transport, UnusedApi())
-        dashboard.page = "load"
-        dashboard.live = {
-            "parsed": {"load_power_w": {"total": 600, "l1": 100, "l2": 200, "l3": 300}}
-        }
-        dashboard.device_charts["load"] = {
-            "metric": "load",
-            "start": "2026-08-02T00:00:00+00:00",
-            "end": "2026-08-03T00:00:00+00:00",
-            "samples": [],
-        }
-
-        dashboard.render_detail()
-        connection.writes.clear()
-        dashboard.render_detail()
-
-        self.assertEqual(connection.writes, [])
-
-    def test_clock_tick_updates_only_the_time_text(self) -> None:
-        moments = [datetime(2026, 8, 2, 18, 30, 0, tzinfo=timezone.utc)]
-        connection = RecordingConnection()
-        transport = NextionTransport("unused", 115200)
-        transport.connection = connection
-        dashboard = NextionDashboard(
-            transport, UnusedApi(), clock=lambda: moments[0]
-        )
-        dashboard.page = "load"
-
-        dashboard.update_clock()
-        dashboard.update_freshness()
-        connection.writes.clear()
-        moments[0] += timedelta(seconds=1)
-        dashboard.update_clock()
-        dashboard.update_freshness()
-
-        self.assertEqual(len(connection.writes), 1)
-        command = connection.writes[0].decode("ascii", errors="replace")
-        self.assertTrue(command.startswith("xstr 375,3,98,26,"))
-        self.assertIn('"18:30:01"', command)
-        self.assertNotIn("fill ", command)
-        self.assertNotIn("line ", command)
-
-    def test_chart_refresh_only_touches_plot_rectangle(self) -> None:
-        transport = RecordingTransport()
-        dashboard = NextionDashboard(transport, UnusedApi())
-        dashboard.page = "load"
-        dashboard.chart_axis_signature["load"] = ("00:00", "12:00", "24:00")
-        result = Future()
-        result.set_result({
-            "metric": "load",
-            "start": "2026-08-02T00:00:00+00:00",
-            "end": "2026-08-03T00:00:00+00:00",
-            "samples": [[600, 100, 200, 300]],
-        })
-        dashboard.api_polls["chart:load"] = result
-
-        needs_full_repaint = dashboard.collect_api_results()
-
-        self.assertFalse(needs_full_repaint)
-        self.assertTrue(transport.commands)
-        self.assertTrue(all(command.startswith(("fill 60,120,", "line ")) for command in transport.commands))
-        self.assertFalse(any(command.startswith("xstr ") for command in transport.commands))
-
-    def test_identical_chart_payload_sends_no_uart_commands(self) -> None:
-        transport = RecordingTransport()
-        dashboard = NextionDashboard(transport, UnusedApi())
-        dashboard.page = "load"
-        payload = {
-            "metric": "load",
-            "start": "2026-08-02T00:00:00+00:00",
-            "end": "2026-08-03T00:00:00+00:00",
-            "samples": [[600, 100, 200, 300]],
-        }
-        dashboard.device_charts["load"] = payload
-        result = Future()
-        result.set_result(dict(payload))
-        dashboard.api_polls["chart:load"] = result
-
-        needs_full_repaint = dashboard.collect_api_results()
-
-        self.assertFalse(needs_full_repaint)
-        self.assertEqual(transport.commands, [])
 
     def test_detail_values_render_before_incremental_chart_replay(self) -> None:
         now = datetime(2026, 8, 1, 15, 9, 13, tzinfo=timezone.utc)

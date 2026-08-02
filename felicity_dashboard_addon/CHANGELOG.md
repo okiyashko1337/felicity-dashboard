@@ -1,11 +1,5 @@
 # Changelog
 
-## 0.10.6
-
-- Refresh only the graph plot when compact chart data changes.
-- Keep fixed time-axis labels untouched during live clock and chart updates.
-- Eliminate the periodic `00:00/12:00/24:00` and System-axis flicker.
-
 ## 0.10.5
 
 - Make the legacy Raspberry-to-Nextion bridge consume the new compact device charts.
