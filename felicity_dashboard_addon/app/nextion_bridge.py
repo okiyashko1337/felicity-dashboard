@@ -388,6 +388,9 @@ class FelicityApi:
     def system(self) -> dict:
         return self.get("/api/system/current")
 
+    def device_chart(self, metric: str) -> dict:
+        return self.get(f"/api/device/chart?{urlencode({'metric': metric})}", timeout=5.0)
+
     def today(self, now: datetime | None = None) -> dict:
         now = now or datetime.now().astimezone()
         query = urlencode({"day": now.date().isoformat()})
@@ -425,9 +428,12 @@ class NextionDashboard:
         self.histories: dict[str, deque[tuple[int, ...]]] = {
             page: deque(maxlen=HISTORY_LENGTH) for page in DETAIL_PAGES
         }
+        self.device_charts: dict[str, dict] = {}
         self.chart_x: dict[str, int] = {}
         self.chart_previous: dict[str, tuple[int, ...]] = {}
-        self.chart_replays: dict[str, deque[tuple[int, ...]]] = {}
+        self.chart_previous_index: dict[str, int] = {}
+        self.chart_replays: dict[str, deque[Any]] = {}
+        self.fixed_chart_replays: set[str] = set()
         self.chart_start_time: dict[str, datetime] = {}
         self.chart_end_time: dict[str, datetime] = {}
         self.chart_axis_bucket: dict[str, int] = {}
@@ -443,10 +449,12 @@ class NextionDashboard:
         self.api_polls.clear()
         self.api_executor.shutdown(wait=True, cancel_futures=True)
 
-    def schedule_api_poll(self, name: str, request: Callable[[], dict]) -> None:
+    def schedule_api_poll(self, name: str, request: Callable[[], dict]) -> bool:
         """Start at most one background request of each kind."""
         if name not in self.api_polls:
             self.api_polls[name] = self.api_executor.submit(request)
+            return True
+        return False
 
     def collect_api_results(self) -> bool:
         """Apply completed API requests without ever blocking UART handling."""
@@ -464,7 +472,7 @@ class NextionDashboard:
             try:
                 result = future.result()
             except Exception as error:
-                logger.warning("%s unavailable: %s", labels[name], error)
+                logger.warning("%s unavailable: %s", labels.get(name, "Device chart"), error)
                 continue
 
             if name == "live":
@@ -490,6 +498,11 @@ class NextionDashboard:
             elif name == "gaps":
                 self.gap_data = result
                 replay_page = self.page == "gaps"
+            elif name.startswith("chart:"):
+                metric = result.get("metric")
+                if metric in DETAIL_PAGES:
+                    self.device_charts[metric] = result
+                    replay_page = replay_page or self.page == metric
         return replay_page
 
     def navigate(self, page: str) -> bool:
@@ -599,9 +612,42 @@ class NextionDashboard:
         """Replay recent real samples so pixel distance still represents time."""
         return samples[-CHART_HISTORY_MAX_POINTS:]
 
+    @staticmethod
+    def scale_device_chart(page: str, rows: list) -> list[tuple[int, ...] | None]:
+        """Convert compact API values to Nextion's 0-255 chart coordinates."""
+        scaled_rows: list[tuple[int, ...] | None] = []
+        for row in rows:
+            if not isinstance(row, list):
+                scaled_rows.append(None)
+                continue
+            if page in {"pv", "load", "today"}:
+                scaled_rows.append(tuple(scale(value, 0, 15000) for value in row))
+            elif page == "battery":
+                scaled_rows.append((
+                    scale(row[0] if row else None, 0, 100),
+                    scale(row[1] if len(row) > 1 else None, -15000, 15000),
+                ))
+            elif page == "grid":
+                scaled_rows.append(tuple(
+                    scale(value, 180, 260) if index < 3 else scale(value, -15000, 15000)
+                    for index, value in enumerate(row)
+                ))
+            elif page == "system":
+                scaled_rows.append(tuple(scale(value, 0, 100) for value in row))
+            else:
+                scaled_rows.append(None)
+        return scaled_rows
+
     def begin_waveform_replay(self) -> None:
         """Prepare a chart replay without blocking current-value rendering."""
-        if self.page == "gaps":
+        fixed_chart = self.device_charts.get(self.page)
+        if self.page in DETAIL_PAGES and fixed_chart:
+            samples = self.scale_device_chart(self.page, fixed_chart.get("samples", []))
+            start = datetime.fromisoformat(fixed_chart["start"])
+            now = datetime.fromisoformat(fixed_chart["end"])
+            self.fixed_chart_replays.add(self.page)
+            replay: deque[Any] = deque(enumerate(samples))
+        elif self.page == "gaps":
             now = self.clock()
             start = datetime.combine(now.date(), datetime_time.min, tzinfo=now.tzinfo)
             gaps = (self.gap_data or {}).get("gap_statistics", {}).get("gaps", [])
@@ -612,26 +658,35 @@ class NextionDashboard:
             )
             values = coverage_bins(gaps, start, now, count=point_count)
             samples = [(value,) for value in values]
+            self.fixed_chart_replays.discard(self.page)
+            replay = deque(samples)
         elif self.page in DETAIL_PAGES:
             samples = self.sparse_history(list(self.histories[self.page]))
             now = self.clock()
             start = now - timedelta(seconds=max(0, len(samples) - 1) * self.live_interval)
+            self.fixed_chart_replays.discard(self.page)
+            replay = deque(samples)
         else:
             return
         self.chart_replays.clear()
-        self.chart_replays[self.page] = deque(samples)
+        self.chart_replays[self.page] = replay
         self.chart_x[self.page] = CHART_LEFT
         self.chart_previous.pop(self.page, None)
+        self.chart_previous_index.pop(self.page, None)
         self.chart_start_time[self.page] = start
         self.chart_end_time[self.page] = now
-        projected_x = min(
-            CHART_RIGHT,
-            CHART_LEFT + max(0, len(samples) - 1) * CHART_REPLAY_STEP,
-        )
+        if fixed_chart:
+            projected_x = CHART_RIGHT
+            self.render_fixed_time_axis(self.page)
+        else:
+            projected_x = min(
+                CHART_RIGHT,
+                CHART_LEFT + max(0, len(samples) - 1) * CHART_REPLAY_STEP,
+            )
         if self.page == "gaps":
             day_end = start + timedelta(days=1) - timedelta(minutes=1)
             self.render_time_axis(self.page, CHART_RIGHT, start, day_end)
-        else:
+        elif not fixed_chart:
             self.render_time_axis(self.page, projected_x, start, now)
 
     def advance_waveform_replay(self, max_samples: int = CHART_REPLAY_SAMPLES_PER_TICK) -> bool:
@@ -646,7 +701,30 @@ class NextionDashboard:
         for _ in range(max_samples):
             if not pending:
                 break
-            sample = pending.popleft()
+            item = pending.popleft()
+            if self.page in self.fixed_chart_replays:
+                index, sample = item
+                count = max(2, len(self.device_charts[self.page].get("samples", [])))
+                x = CHART_LEFT + round(index * (CHART_RIGHT - CHART_LEFT) / (count - 1))
+                previous = self.chart_previous.get(self.page)
+                previous_index = self.chart_previous_index.get(self.page)
+                if sample is None:
+                    self.chart_previous.pop(self.page, None)
+                    self.chart_previous_index.pop(self.page, None)
+                elif previous is None or previous_index is None:
+                    self.draw_chart_segment(self.page, x, sample, x, sample)
+                    self.chart_previous[self.page] = sample
+                    self.chart_previous_index[self.page] = index
+                else:
+                    previous_x = CHART_LEFT + round(
+                        previous_index * (CHART_RIGHT - CHART_LEFT) / (count - 1)
+                    )
+                    self.draw_chart_segment(self.page, previous_x, previous, x, sample)
+                    self.chart_previous[self.page] = sample
+                    self.chart_previous_index[self.page] = index
+                self.chart_x[self.page] = x
+                continue
+            sample = item
             previous = self.chart_previous.get(self.page)
             x = self.chart_x.get(self.page, CHART_LEFT)
             if previous is None:
@@ -661,12 +739,15 @@ class NextionDashboard:
 
         if not pending:
             self.chart_replays.pop(self.page, None)
-            self.render_time_axis(
-                self.page,
-                self.chart_x.get(self.page, CHART_LEFT),
-                self.chart_start_time.get(self.page),
-                self.chart_end_time.get(self.page),
-            )
+            if self.page in self.fixed_chart_replays:
+                self.render_fixed_time_axis(self.page)
+            else:
+                self.render_time_axis(
+                    self.page,
+                    self.chart_x.get(self.page, CHART_LEFT),
+                    self.chart_start_time.get(self.page),
+                    self.chart_end_time.get(self.page),
+                )
         return True
 
     def replay_waveform(self) -> None:
@@ -708,6 +789,8 @@ class NextionDashboard:
 
     def append_active_waveform(self) -> None:
         if self.page not in DETAIL_PAGES or not self.histories[self.page]:
+            return
+        if self.page in self.device_charts:
             return
         if self.chart_replays.get(self.page):
             return
@@ -896,6 +979,9 @@ class NextionDashboard:
             for component, value in zip(("tY2Top", "tY2Mid", "tY2Bottom"), right_labels):
                 self.transport.set_color(page, component, 31727)
                 self.transport.set_text(page, component, value)
+        if page in self.device_charts:
+            self.render_fixed_time_axis(page)
+            return
         now = self.clock()
         if page == "gaps":
             start = datetime.combine(now.date(), datetime_time.min, tzinfo=now.tzinfo)
@@ -909,6 +995,20 @@ class NextionDashboard:
         self.chart_start_time[page] = start
         self.chart_end_time[page] = now
         self.render_time_axis(page, end_x, start, now)
+
+    def render_fixed_time_axis(self, page: str) -> None:
+        """Label full-day charts and the rolling System window without ambiguity."""
+        self.transport.command("fill 58,245,364,18,2307")
+        values = ("-10m", "-5m", "NOW") if page == "system" else (
+            "00:00", "12:00", "24:00"
+        )
+        positions = (CHART_LEFT, 214, CHART_RIGHT - 52)
+        for component, value, x in zip(
+            ("tXLeft", "tXMid", "tXRight"), values, positions
+        ):
+            self.transport.set_text_at(
+                page, component, value, (x, 247, 52, 14)
+            )
 
     def render_time_axis(
         self,
@@ -988,6 +1088,7 @@ class NextionDashboard:
         self.transport.command("page home")
         self.page = "home"
         next_clock = next_live = next_system = next_today = next_touch_keepalive = 0.0
+        next_chart: dict[str, float] = {}
         force_render = True
         while running:
             cycle = time.monotonic()
@@ -1014,6 +1115,16 @@ class NextionDashboard:
 
             if force_render and self.page == "gaps" and self.gap_data is None:
                 self.schedule_api_poll("gaps", lambda: self.api.today_gaps(self.clock()))
+
+            if self.page in DETAIL_PAGES and (
+                self.page not in self.device_charts
+                or cycle >= next_chart.get(self.page, 0.0)
+            ):
+                metric = self.page
+                if self.schedule_api_poll(
+                    f"chart:{metric}", lambda metric=metric: self.api.device_chart(metric)
+                ):
+                    next_chart[metric] = cycle + (10.0 if metric == "system" else 60.0)
 
             if force_render:
                 self.render_page(replay=True)
