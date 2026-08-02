@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0
+
+- Completed PV, load, battery, grid, system, today, and data-gap detail charts.
+- Aligned chart timestamps with the actual end of each live trace.
+- Added a fixed 00:00–23:59 daily scale and stepped rendering for data gaps.
+- Removed overlapping time labels and cleaned up the compact detail-page header.
+- Added battery-module details and disk usage to the local display.
+
 ## 0.8.0
 
 - Optional UART bridge for the Nextion NX4827P043_011 local display.

@@ -19,6 +19,9 @@ class RecordingTransport:
     def set_text(self, page: str, component: str, value: object) -> None:
         self.text[(page, component)] = str(value)
 
+    def set_text_at(self, page: str, component: str, value: object, layout) -> None:
+        self.text[(page, component)] = str(value)
+
     def set_color(self, page: str, component: str, value: int) -> None:
         self.colors[(page, component)] = value
 
@@ -123,14 +126,14 @@ class NextionBridgeTests(unittest.TestCase):
 
         self.assertEqual(transport.cleared, 0)
         self.assertEqual(
-            transport.commands,
+            [command for command in transport.commands if command.startswith("line ")],
             [
                 "line 60,235,60,235,65519",
                 "line 60,231,60,231,64495",
                 "line 60,226,60,226,2047",
-                "line 60,235,64,235,65519",
-                "line 60,231,64,230,64495",
-                "line 60,226,64,225,2047",
+                "line 60,235,68,235,65519",
+                "line 60,231,68,230,64495",
+                "line 60,226,68,225,2047",
             ],
         )
         self.assertEqual(transport.waveform, [])
@@ -171,6 +174,66 @@ class NextionBridgeTests(unittest.TestCase):
 
         self.assertLessEqual(len(dashboard.chart_replays["pv"]), 30)
         self.assertEqual(dashboard.chart_replays["pv"][-1], (89, 89, 89))
+        self.assertEqual(dashboard.chart_replays["pv"][0], (60, 60, 60))
+
+    def test_time_axis_ends_below_actual_graph_endpoint_without_overlap(self) -> None:
+        now = datetime(2026, 8, 2, 7, 32, 14, tzinfo=timezone.utc)
+        transport = RecordingTransport()
+        dashboard = NextionDashboard(transport, UnusedApi(), clock=lambda: now)
+        dashboard.page = "pv"
+        dashboard.histories["pv"].extend((value, value, value) for value in range(90))
+
+        dashboard.begin_waveform_replay()
+
+        self.assertIn("fill 58,245,364,18,2307", transport.commands)
+        self.assertEqual(transport.text[("pv", "tXRight")], "07:32")
+        self.assertEqual(transport.text[("pv", "tXLeft")], "07:31")
+
+    def test_gap_page_uses_incremental_lines_and_day_timescale(self) -> None:
+        now = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
+        transport = RecordingTransport()
+        dashboard = NextionDashboard(transport, UnusedApi(), clock=lambda: now)
+        dashboard.page = "gaps"
+        dashboard.today_data = {
+            "gap_statistics": {
+                "coverage_percent": 99.0,
+                "gap_count": 1,
+                "longest_gap_seconds": 60,
+                "gaps": [{
+                    "start": (now - timedelta(hours=1)).isoformat(),
+                    "end": (now - timedelta(minutes=59)).isoformat(),
+                }],
+            }
+        }
+
+        dashboard.render_page(replay=True)
+
+        self.assertEqual(transport.text[("gaps", "tXLeft")], "00:00")
+        self.assertEqual(transport.text[("gaps", "tXMid")], "11:59")
+        self.assertEqual(transport.text[("gaps", "tXRight")], "23:59")
+        self.assertEqual(len(dashboard.chart_replays["gaps"]), 24)
+        self.assertEqual(transport.cleared, 0)
+        self.assertEqual(transport.waveform_batches, [])
+
+        dashboard.advance_waveform_replay()
+
+        self.assertTrue(any(command.startswith("line ") for command in transport.commands))
+
+    def test_system_history_contains_disk_channel(self) -> None:
+        dashboard = NextionDashboard(RecordingTransport(), UnusedApi())
+        dashboard.live = {"parsed": {}}
+        dashboard.system_data = {
+            "data": {
+                "cpu_percent": 10,
+                "memory": {"percent": 20},
+                "cpu_temperature_c": 50,
+                "disk": {"percent": 30},
+            }
+        }
+
+        dashboard.remember_live()
+
+        self.assertEqual(len(dashboard.histories["system"][-1]), 4)
 
     def test_duration_is_compact_for_small_display(self) -> None:
         self.assertEqual(format_duration(42), "42s")
