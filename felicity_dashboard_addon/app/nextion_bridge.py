@@ -347,8 +347,10 @@ class FelicityApi:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
-    def get(self, path: str) -> dict:
-        with urlopen(f"{self.base_url}{path}", timeout=self.timeout) as response:
+    def get(self, path: str, timeout: float | None = None) -> dict:
+        with urlopen(
+            f"{self.base_url}{path}", timeout=self.timeout if timeout is None else timeout
+        ) as response:
             return json.load(response)
 
     def current(self) -> dict:
@@ -359,10 +361,15 @@ class FelicityApi:
 
     def today(self, now: datetime | None = None) -> dict:
         now = now or datetime.now().astimezone()
+        query = urlencode({"day": now.date().isoformat()})
+        return self.get(f"/api/analytics/day-summary?{query}")
+
+    def today_gaps(self, now: datetime | None = None) -> dict:
+        now = now or datetime.now().astimezone()
         start = datetime.combine(now.date(), datetime_time.min, tzinfo=now.tzinfo)
         end = start + timedelta(days=1)
         query = urlencode({"start": start.isoformat(), "end": end.isoformat(), "max_points": 480})
-        return self.get(f"/api/analytics?{query}")
+        return self.get(f"/api/analytics?{query}", timeout=max(15.0, self.timeout))
 
 
 class NextionDashboard:
@@ -385,6 +392,7 @@ class NextionDashboard:
         self.live: dict | None = None
         self.system_data: dict | None = None
         self.today_data: dict | None = None
+        self.gap_data: dict | None = None
         self.histories: dict[str, deque[tuple[int, ...]]] = {
             page: deque(maxlen=HISTORY_LENGTH) for page in DETAIL_PAGES
         }
@@ -504,7 +512,7 @@ class NextionDashboard:
         if self.page == "gaps":
             now = self.clock()
             start = datetime.combine(now.date(), datetime_time.min, tzinfo=now.tzinfo)
-            gaps = (self.today_data or {}).get("gap_statistics", {}).get("gaps", [])
+            gaps = (self.gap_data or {}).get("gap_statistics", {}).get("gaps", [])
             elapsed = max(0.0, min(86400.0, (now - start).total_seconds()))
             point_count = max(
                 2,
@@ -840,7 +848,7 @@ class NextionDashboard:
             )
 
     def render_gaps(self) -> None:
-        gaps = (self.today_data or {}).get("gap_statistics", {})
+        gaps = (self.gap_data or {}).get("gap_statistics", {})
         gap_list = gaps.get("gaps", [])
         latest = gap_list[-1] if gap_list else None
         self.transport.set_color("gaps", "tBack", 65519)
@@ -857,7 +865,7 @@ class NextionDashboard:
         now = self.clock()
         start = datetime.combine(now.date(), datetime_time.min, tzinfo=now.tzinfo)
         end = min(start + timedelta(days=1), now)
-        gaps = (self.today_data or {}).get("gap_statistics", {}).get("gaps", [])
+        gaps = (self.gap_data or {}).get("gap_statistics", {}).get("gaps", [])
         self.transport.clear_waveform()
         self.transport.add_waveform_batch(0, coverage_bins(gaps, start, end))
 
@@ -920,6 +928,12 @@ class NextionDashboard:
                 except Exception as error:
                     logger.warning("Today's analytics unavailable: %s", error)
                 next_today = cycle + self.analytics_interval
+
+            if force_render and self.page == "gaps":
+                try:
+                    self.gap_data = self.api.today_gaps(self.clock())
+                except Exception as error:
+                    logger.warning("Today's gap analytics unavailable: %s", error)
 
             if force_render:
                 self.render_page(replay=True)

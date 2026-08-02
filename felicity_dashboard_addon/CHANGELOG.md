@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.4
+
+- Load the TODAY card from the persisted daily energy aggregate instead of scanning raw telemetry.
+- Keep the heavier data-gap calculation separate and request it only when opening the gaps page.
+- Prevent the TODAY value from becoming stale when a full-day raw query exceeds the bridge timeout.
+
 ## 0.9.3
 
 - Replace the wordmark with a clipped-safe 18px yin-yang drawn by Nextion primitives.

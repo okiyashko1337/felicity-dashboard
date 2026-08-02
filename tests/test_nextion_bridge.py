@@ -1,7 +1,15 @@
+from __future__ import annotations
+
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from nextion_bridge import NextionDashboard, NextionFrameParser, coverage_bins, format_duration
+from nextion_bridge import (
+    FelicityApi,
+    NextionDashboard,
+    NextionFrameParser,
+    coverage_bins,
+    format_duration,
+)
 
 
 class RecordingTransport:
@@ -42,7 +50,31 @@ class UnusedApi:
     pass
 
 
+class CapturingApi(FelicityApi):
+    def __init__(self) -> None:
+        super().__init__("http://dashboard", timeout=2.0)
+        self.requests: list[tuple[str, float | None]] = []
+
+    def get(self, path: str, timeout: float | None = None) -> dict:
+        self.requests.append((path, timeout))
+        return {}
+
+
 class NextionBridgeTests(unittest.TestCase):
+    def test_today_uses_fast_daily_summary_and_gaps_keep_long_timeout(self) -> None:
+        now = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
+        api = CapturingApi()
+
+        api.today(now)
+        api.today_gaps(now)
+
+        self.assertEqual(
+            api.requests[0],
+            ("/api/analytics/day-summary?day=2026-08-02", None),
+        )
+        self.assertIn("/api/analytics?", api.requests[1][0])
+        self.assertEqual(api.requests[1][1], 15.0)
+
     def test_frame_parser_handles_fragmented_page_event(self) -> None:
         parser = NextionFrameParser()
 
@@ -197,7 +229,7 @@ class NextionBridgeTests(unittest.TestCase):
         transport = RecordingTransport()
         dashboard = NextionDashboard(transport, UnusedApi(), clock=lambda: now)
         dashboard.page = "gaps"
-        dashboard.today_data = {
+        dashboard.gap_data = {
             "gap_statistics": {
                 "coverage_percent": 99.0,
                 "gap_count": 1,
