@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0
+
+- Stop storing raw inverter packets and duplicated diagnostic fields in history.
+- Keep one full live snapshot while persisting compact history every two minutes.
+- Preserve precise gap detection in a lightweight three-day timestamp table.
+- Retain detailed Raspberry Pi metrics for 48 hours.
+- Automatically compact and vacuum legacy databases before services start.
+- Wait longer for SQLite locks and keep collectors alive after transient database errors.
+- Reduce routine collector/system logging to one summary per minute and disable HTTP access noise.
+
 ## 0.10.9
 
 - Roll the Raspberry-to-Nextion bridge back exactly to the proven 0.10.5 implementation.
