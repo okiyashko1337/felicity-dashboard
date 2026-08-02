@@ -94,8 +94,8 @@ TEXT_LAYOUTS = {
     },
     "detail": {
         "tBack": (4, 3, 22, 26),
-        "tBrand": (28, 3, 102, 26),
-        "tTitle": (132, 3, 44, 26),
+        "tBrand": (28, 3, 82, 26),
+        "tTitle": (112, 3, 64, 26),
         "tMain": (18, 52, 145, 26),
         "tA": (172, 50, 292, 18),
         "tB": (172, 69, 292, 18),
@@ -722,11 +722,34 @@ class NextionDashboard:
         self.transport.set_color(page, "tBack", 65519)
         self.transport.set_color(page, "tBrand", 2047)
         self.transport.set_text(page, "tBack", "<")
-        self.transport.set_text(page, "tBrand", "FELICITY IVGM")
+        self.transport.set_text(page, "tBrand", "FELICITY")
         self.transport.set_text(page, "tTitle", page.upper()[:6])
+        if page == "system":
+            for component, color in zip(
+                ("tMain", "tA", "tB", "tC"), CHART_COLORS["system"]
+            ):
+                self.transport.set_color(page, component, color)
         for component, value in zip(("tMain", "tA", "tB", "tC"), values):
             self.transport.set_text(page, component, value)
         self.render_chart_axes(page)
+
+    def render_system_canvas(self) -> None:
+        """Replace the legacy light System bitmap with the standard dark UI."""
+        self.transport.command("fill 0,0,480,272,162")
+        self.transport.command("line 8,32,472,32,2047")
+        self.transport.command("fill 10,42,460,64,2307")
+        self.transport.command("draw 10,42,469,105,8775")
+        self.transport.command(
+            f"fill {CHART_LEFT},{CHART_TOP},{CHART_RIGHT - CHART_LEFT + 1},"
+            f"{CHART_BOTTOM - CHART_TOP + 1},2307"
+        )
+        self.transport.command(
+            f"draw {CHART_LEFT},{CHART_TOP},{CHART_RIGHT},{CHART_BOTTOM},8775"
+        )
+        for x in range(CHART_LEFT, CHART_RIGHT + 1, 72):
+            self.transport.command(f"line {x},{CHART_TOP},{x},{CHART_BOTTOM},6597")
+        for y in range(CHART_TOP, CHART_BOTTOM + 1, 30):
+            self.transport.command(f"line {CHART_LEFT},{y},{CHART_RIGHT},{y},6597")
 
     def render_chart_axes(self, page: str) -> None:
         labels = CHART_AXIS_LABELS.get(page)
@@ -793,7 +816,7 @@ class NextionDashboard:
         self.transport.set_color("gaps", "tBack", 65519)
         self.transport.set_color("gaps", "tBrand", 2047)
         self.transport.set_text("gaps", "tBack", "<")
-        self.transport.set_text("gaps", "tBrand", "FELICITY IVGM")
+        self.transport.set_text("gaps", "tBrand", "FELICITY")
         self.transport.set_text("gaps", "tTitle", "GAPS")
         self.transport.set_text("gaps", "tMain", f"{number(gaps.get('coverage_percent')):.1f}%")
         self.transport.set_text("gaps", "tA", f"GAPS  {round(number(gaps.get('gap_count')))}")
@@ -816,6 +839,8 @@ class NextionDashboard:
         if replay:
             time.sleep(0.15)
             self.transport.invalidate_page(self.page)
+            if self.page == "system":
+                self.render_system_canvas()
         if self.page == "home":
             self.render_home()
         elif self.page == "gaps":

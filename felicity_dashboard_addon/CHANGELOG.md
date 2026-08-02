@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1
+
+- Fit the compact Felicity brand and full page title on detail headers.
+- Replace the legacy light System page with the standard dark dashboard canvas.
+- Color-code CPU, RAM, temperature, and disk metrics to match their chart lines.
+
 ## 0.9.0
 
 - Completed PV, load, battery, grid, system, today, and data-gap detail charts.
