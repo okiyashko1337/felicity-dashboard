@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.5
+
+- Keep touch input responsive while API requests run in bounded background workers.
+- Recover Nextion coordinate reporting automatically and accept both press and release events.
+- Bound and reset the UART parser buffer so damaged frames cannot accumulate indefinitely.
+- Close every SQLite connection deterministically to prevent long-running resource degradation.
+
 ## 0.9.4
 
 - Load the TODAY card from the persisted daily energy aggregate instead of scanning raw telemetry.

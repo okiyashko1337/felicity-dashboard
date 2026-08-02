@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta, timezone
+from threading import Event
 
 from nextion_bridge import (
     FelicityApi,
@@ -20,9 +21,13 @@ class RecordingTransport:
         self.waveform_batches: list[tuple[int, list[int]]] = []
         self.cleared = 0
         self.commands: list[str] = []
+        self.touch_enables = 0
 
     def command(self, value: str) -> None:
         self.commands.append(value)
+
+    def enable_touch_coordinates(self) -> None:
+        self.touch_enables += 1
 
     def set_text(self, page: str, component: str, value: object) -> None:
         self.text[(page, component)] = str(value)
@@ -60,6 +65,17 @@ class CapturingApi(FelicityApi):
         return {}
 
 
+class BlockingApi:
+    def __init__(self) -> None:
+        self.started = Event()
+        self.release = Event()
+
+    def current(self) -> dict:
+        self.started.set()
+        self.release.wait(timeout=1)
+        return {}
+
+
 class NextionBridgeTests(unittest.TestCase):
     def test_today_uses_fast_daily_summary_and_gaps_keep_long_timeout(self) -> None:
         now = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
@@ -80,6 +96,21 @@ class NextionBridgeTests(unittest.TestCase):
 
         self.assertEqual(parser.feed(b"\x66\x03\xff"), [])
         self.assertEqual(parser.feed(b"\xff\xff\x88\xff\xff\xff"), [b"\x66\x03", b"\x88"])
+
+    def test_frame_parser_discards_unbounded_unterminated_noise(self) -> None:
+        parser = NextionFrameParser(max_buffer_bytes=32)
+
+        self.assertEqual(parser.feed(b"x" * 128), [])
+
+        self.assertLessEqual(len(parser.buffer), 2)
+        self.assertEqual(parser.feed(b"\x67\x00\xc8\x00\x64\x01\xff\xff\xff"), [b"\x67\x00\xc8\x00\x64\x01"])
+
+    def test_frame_parser_recovers_touch_after_noise_in_same_frame(self) -> None:
+        parser = NextionFrameParser(max_buffer_bytes=32)
+
+        frames = parser.feed(b"x" * 128 + b"\x67\x00\xc8\x00\x64\x01\xff\xff\xff")
+
+        self.assertEqual(frames, [b"\x67\x00\xc8\x00\x64\x01"])
 
     def test_gap_coverage_is_binned_without_interpolation(self) -> None:
         start = datetime(2026, 8, 1, tzinfo=timezone.utc)
@@ -143,6 +174,31 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertTrue(dashboard.handle_frame(b"\x67\x00\x20\x00\x10\x00"))
         self.assertEqual(dashboard.page, "home")
         self.assertEqual(transport.commands[-1], "page home")
+
+    def test_touch_press_is_accepted_when_release_event_is_missing(self) -> None:
+        transport = RecordingTransport()
+        dashboard = NextionDashboard(transport, UnusedApi())
+
+        try:
+            self.assertTrue(dashboard.handle_frame(b"\x67\x00\xc8\x00\x64\x01"))
+            self.assertEqual(dashboard.page, "load")
+            self.assertGreaterEqual(transport.touch_enables, 1)
+        finally:
+            dashboard.close()
+
+    def test_slow_api_poll_does_not_block_touch_handling(self) -> None:
+        transport = RecordingTransport()
+        api = BlockingApi()
+        dashboard = NextionDashboard(transport, api)
+
+        try:
+            dashboard.schedule_api_poll("live", api.current)
+            self.assertTrue(api.started.wait(timeout=0.5))
+            self.assertTrue(dashboard.handle_frame(b"\x67\x00\xc8\x00\x64\x01"))
+            self.assertEqual(dashboard.page, "load")
+        finally:
+            api.release.set()
+            dashboard.close()
 
     def test_raw_touch_on_home_date_opens_gap_statistics(self) -> None:
         transport = RecordingTransport()
