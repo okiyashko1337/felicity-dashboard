@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.9
+
+- Roll the Raspberry-to-Nextion bridge back exactly to the proven 0.10.5 implementation.
+- Restore immediate value, header, BACK label, and graph-line rendering.
+- Accept the earlier time-axis label flicker in preference to display regressions.
+
 ## 0.10.5
 
 - Make the legacy Raspberry-to-Nextion bridge consume the new compact device charts.
