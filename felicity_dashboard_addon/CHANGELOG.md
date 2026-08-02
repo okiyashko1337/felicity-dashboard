@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.2
+
+- Remove the last legacy logo pixels before drawing compact detail headers.
+- Give Battery the same complete dark canvas and color-coded metrics as System.
+- Match the SYSTEM home-card title color to the other card headings.
+
 ## 0.9.1
 
 - Fit the compact Felicity brand and full page title on detail headers.

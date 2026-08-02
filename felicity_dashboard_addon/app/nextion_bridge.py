@@ -667,7 +667,7 @@ class NextionDashboard:
         system = (self.system_data or {}).get("data", {})
         # Keep this label dynamic so older HMI backgrounds saying
         # "RASPBERRY PI" are corrected without requiring another asset flash.
-        self.transport.set_color("home", "tSysTitle", 44373)
+        self.transport.set_color("home", "tSysTitle", 2047)
         self.transport.set_text("home", "tSysTitle", "SYSTEM")
         self.transport.set_text("home", "tSysV", f"{text_number(system.get('cpu_percent'), 0)}%")
         self.transport.set_text("home", "tSysS", f"R{text_number(nested(system, 'memory', 'percent'), 0)} T{text_number(system.get('cpu_temperature_c'), 0)} D{text_number(nested(system, 'disk', 'percent'), 0)}")
@@ -729,12 +729,21 @@ class NextionDashboard:
                 ("tMain", "tA", "tB", "tC"), CHART_COLORS["system"]
             ):
                 self.transport.set_color(page, component, color)
+        elif page == "battery":
+            for component, color in zip(
+                ("tMain", "tA", "tB", "tC"), (65519, 65535, 64495, 2047)
+            ):
+                self.transport.set_color(page, component, color)
         for component, value in zip(("tMain", "tA", "tB", "tC"), values):
             self.transport.set_text(page, component, value)
         self.render_chart_axes(page)
 
-    def render_system_canvas(self) -> None:
-        """Replace the legacy light System bitmap with the standard dark UI."""
+    def render_detail_header_canvas(self) -> None:
+        """Erase the legacy bitmap title before drawing the compact header."""
+        self.transport.command("fill 0,0,178,32,162")
+
+    def render_dark_detail_canvas(self) -> None:
+        """Replace a legacy light detail bitmap with the standard dark UI."""
         self.transport.command("fill 0,0,480,272,162")
         self.transport.command("line 8,32,472,32,2047")
         self.transport.command("fill 10,42,460,64,2307")
@@ -839,8 +848,10 @@ class NextionDashboard:
         if replay:
             time.sleep(0.15)
             self.transport.invalidate_page(self.page)
-            if self.page == "system":
-                self.render_system_canvas()
+            if self.page in {"battery", "system"}:
+                self.render_dark_detail_canvas()
+            elif self.page != "home":
+                self.render_detail_header_canvas()
         if self.page == "home":
             self.render_home()
         elif self.page == "gaps":
