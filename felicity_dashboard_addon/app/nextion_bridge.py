@@ -31,6 +31,8 @@ PAGE_NAMES = {
 }
 DETAIL_PAGES = {"pv", "load", "battery", "grid", "system", "today"}
 CHART_PAGES = DETAIL_PAGES | {"gaps"}
+LEGACY_LIGHT_PAGES = {"battery", "system"}
+DARK_DETAIL_TEMPLATE_PAGE = "pv"
 WAVEFORM_COMPONENT_ID = 2
 HISTORY_LENGTH = 90
 GAP_CHART_POINTS = 46
@@ -78,7 +80,12 @@ TEXT_LAYOUTS = {
         "tTime": (375, 3, 98, 26),
     },
     "home": {
-        "tSysTitle": (175, 164, 132, 20),
+        "tPvTitle": (18, 55, 134, 20),
+        "tLoadTitle": (175, 55, 134, 20),
+        "tBatTitle": (332, 55, 134, 20),
+        "tGridTitle": (18, 165, 134, 20),
+        "tSysTitle": (175, 165, 134, 20),
+        "tDayTitle": (332, 165, 134, 20),
         "tPvV": (18, 80, 132, 28),
         "tPvS": (18, 116, 134, 26),
         "tLoadV": (175, 80, 132, 28),
@@ -93,9 +100,8 @@ TEXT_LAYOUTS = {
         "tDayS": (332, 226, 134, 26),
     },
     "detail": {
-        "tBack": (4, 3, 22, 26),
-        "tBrand": (28, 3, 82, 26),
-        "tTitle": (112, 3, 64, 26),
+        "tBack": (30, 3, 50, 26),
+        "tTitle": (84, 3, 92, 26),
         "tMain": (18, 52, 145, 26),
         "tA": (172, 50, 292, 18),
         "tB": (172, 69, 292, 18),
@@ -392,7 +398,8 @@ class NextionDashboard:
     def navigate(self, page: str) -> bool:
         if page == self.page:
             return False
-        self.transport.command(f"page {page}")
+        display_page = DARK_DETAIL_TEMPLATE_PAGE if page in LEGACY_LIGHT_PAGES else page
+        self.transport.command(f"page {display_page}")
         self.page = page
         self.transport.invalidate_page(page)
         # Let the display finish painting the new bitmap before drawing dynamic
@@ -411,7 +418,7 @@ class NextionDashboard:
             if 160 <= y <= 271:
                 index = 0 if x < 161 else 1 if x < 318 else 2
                 return self.navigate(("grid", "system", "today")[index])
-        elif x <= 70 and y < 44:
+        elif x <= 84 and y < 44:
             return self.navigate("home")
         return False
 
@@ -419,6 +426,8 @@ class NextionDashboard:
         if len(frame) >= 2 and frame[0] == 0x66:
             page = PAGE_NAMES.get(frame[1])
             if page:
+                if page == DARK_DETAIL_TEMPLATE_PAGE and self.page in LEGACY_LIGHT_PAGES:
+                    return False
                 changed = page != self.page
                 self.page = page
                 if changed:
@@ -656,6 +665,17 @@ class NextionDashboard:
         grid_w = data.get("grid_power_w", {})
         battery_power = number(data.get("battery_power_w"))
         battery_mode = "CHG" if battery_power > 0 else "DIS" if battery_power < 0 else "IDLE"
+        titles = {
+            "tPvTitle": "SOLAR",
+            "tLoadTitle": "HOME LOAD",
+            "tBatTitle": "BATTERY",
+            "tGridTitle": "GRID",
+            "tSysTitle": "SYSTEM",
+            "tDayTitle": "TODAY",
+        }
+        for component, title in titles.items():
+            self.transport.set_color("home", component, 2047)
+            self.transport.set_text("home", component, title)
         self.transport.set_text("home", "tPvV", f"{text_number(pv.get('total'))}W")
         self.transport.set_text("home", "tPvS", f"{text_number(pv.get('pv1'))}+{text_number(pv.get('pv2'))}")
         self.transport.set_text("home", "tLoadV", f"{text_number(load.get('total'))}W")
@@ -665,10 +685,6 @@ class NextionDashboard:
         self.transport.set_text("home", "tGridV", f"{text_number(average([grid_v.get('l1'), grid_v.get('l2'), grid_v.get('l3')]), 1)}V")
         self.transport.set_text("home", "tGridS", f"{text_number(grid_w.get('total'))}W {text_number(data.get('grid_frequency_hz'), 0)}Hz")
         system = (self.system_data or {}).get("data", {})
-        # Keep this label dynamic so older HMI backgrounds saying
-        # "RASPBERRY PI" are corrected without requiring another asset flash.
-        self.transport.set_color("home", "tSysTitle", 2047)
-        self.transport.set_text("home", "tSysTitle", "SYSTEM")
         self.transport.set_text("home", "tSysV", f"{text_number(system.get('cpu_percent'), 0)}%")
         self.transport.set_text("home", "tSysS", f"R{text_number(nested(system, 'memory', 'percent'), 0)} T{text_number(system.get('cpu_temperature_c'), 0)} D{text_number(nested(system, 'disk', 'percent'), 0)}")
         stats = (self.today_data or {}).get("stats", {})
@@ -720,9 +736,7 @@ class NextionDashboard:
             return
 
         self.transport.set_color(page, "tBack", 65519)
-        self.transport.set_color(page, "tBrand", 2047)
-        self.transport.set_text(page, "tBack", "<")
-        self.transport.set_text(page, "tBrand", "FELICITY")
+        self.transport.set_text(page, "tBack", "BACK")
         self.transport.set_text(page, "tTitle", page.upper()[:6])
         if page == "system":
             for component, color in zip(
@@ -738,9 +752,16 @@ class NextionDashboard:
             self.transport.set_text(page, component, value)
         self.render_chart_axes(page)
 
-    def render_detail_header_canvas(self) -> None:
-        """Erase the legacy bitmap title before drawing the compact header."""
+    def render_header_identity(self) -> None:
+        """Draw a clipped-safe 18px yin-yang in place of the bitmap wordmark."""
         self.transport.command("fill 0,0,178,32,162")
+        self.transport.command("cirs 15,16,9,65535")
+        self.transport.command("fill 15,7,10,19,162")
+        self.transport.command("cirs 15,11,5,162")
+        self.transport.command("cirs 15,21,5,65535")
+        self.transport.command("cirs 15,11,1,65535")
+        self.transport.command("cirs 15,21,1,162")
+        self.transport.command("cir 15,16,9,2047")
 
     def render_dark_detail_canvas(self) -> None:
         """Replace a legacy light detail bitmap with the standard dark UI."""
@@ -823,9 +844,7 @@ class NextionDashboard:
         gap_list = gaps.get("gaps", [])
         latest = gap_list[-1] if gap_list else None
         self.transport.set_color("gaps", "tBack", 65519)
-        self.transport.set_color("gaps", "tBrand", 2047)
-        self.transport.set_text("gaps", "tBack", "<")
-        self.transport.set_text("gaps", "tBrand", "FELICITY")
+        self.transport.set_text("gaps", "tBack", "BACK")
         self.transport.set_text("gaps", "tTitle", "GAPS")
         self.transport.set_text("gaps", "tMain", f"{number(gaps.get('coverage_percent')):.1f}%")
         self.transport.set_text("gaps", "tA", f"GAPS  {round(number(gaps.get('gap_count')))}")
@@ -848,10 +867,9 @@ class NextionDashboard:
         if replay:
             time.sleep(0.15)
             self.transport.invalidate_page(self.page)
-            if self.page in {"battery", "system"}:
+            if self.page in LEGACY_LIGHT_PAGES:
                 self.render_dark_detail_canvas()
-            elif self.page != "home":
-                self.render_detail_header_canvas()
+            self.render_header_identity()
         if self.page == "home":
             self.render_home()
         elif self.page == "gaps":

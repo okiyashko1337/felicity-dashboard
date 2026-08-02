@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.3
+
+- Replace the wordmark with a clipped-safe 18px yin-yang drawn by Nextion primitives.
+- Show BACK and the current section name on every detail page.
+- Open legacy Battery and System views on an already-dark template to eliminate white flashes.
+- Redraw all six home-card headings with one consistent font and color.
+
 ## 0.9.2
 
 - Remove the last legacy logo pixels before drawing compact detail headers.
