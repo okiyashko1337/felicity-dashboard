@@ -1,0 +1,36 @@
+menu "Felicity dashboard client"
+
+config FELICITY_EMULATOR
+    bool "Run without Wi-Fi and print Nextion commands"
+    default n
+    help
+        Uses deterministic sample values and logs Nextion commands. Intended
+        for ESP32-C3 QEMU before the real board and display arrive.
+
+config FELICITY_API_BASE_URL
+    string "Raspberry dashboard API base URL"
+    default "http://192.168.13.126:8000"
+
+config FELICITY_WIFI_SSID
+    string "Temporary Wi-Fi SSID"
+    default ""
+
+config FELICITY_WIFI_PASSWORD
+    string "Temporary Wi-Fi password"
+    default ""
+
+config FELICITY_NEXTION_TX_GPIO
+    int "ESP32 TX GPIO connected to Nextion RX"
+    range 0 21
+    default 4
+
+config FELICITY_NEXTION_RX_GPIO
+    int "ESP32 RX GPIO connected to Nextion TX"
+    range 0 21
+    default 5
+
+config FELICITY_NEXTION_BAUD
+    int "Nextion UART baud rate"
+    default 115200
+
+endmenu
