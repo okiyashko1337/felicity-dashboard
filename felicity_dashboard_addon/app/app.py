@@ -158,6 +158,18 @@ def analytics_period(
     }
 
 
+@app.get("/api/analytics/day-summary")
+def analytics_day_summary(day: date) -> dict:
+    """Return one persisted daily aggregate without scanning raw telemetry."""
+    end = day + timedelta(days=1)
+    try:
+        rows = get_energy_daily(day.isoformat(), end.isoformat(), DB_PATH)
+        result = build_period_analytics(rows, start_day=day, end_day=end)
+    except sqlite3.Error as error:
+        raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
+    return {"day": day.isoformat(), **result}
+
+
 @app.get("/api/status")
 def status() -> dict:
     snapshot = get_latest_telemetry(DB_PATH)
