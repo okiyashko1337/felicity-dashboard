@@ -12,13 +12,14 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from config import DB_PATH
-from analytics import build_energy_analytics, build_period_analytics
+from analytics import build_energy_analytics, build_gap_statistics, build_period_analytics
 from database import (
     get_latest_telemetry,
     get_latest_system_snapshot,
     get_system_range,
     get_system_history,
     get_parsed_telemetry_history,
+    get_telemetry_timestamps,
     get_telemetry_history,
     get_telemetry_range,
     get_telemetry_range_sampled,
@@ -134,6 +135,54 @@ def device_chart(
         "start": rows[0]["timestamp"] if rows else None,
         "end": rows[-1]["timestamp"] if rows else None,
         "samples": samples,
+    }
+
+
+def _gap_coverage_samples(
+    gaps: list[dict], start: datetime, end: datetime, count: int
+) -> list[list[float]]:
+    if count <= 0 or end <= start:
+        return []
+    bin_seconds = (end - start).total_seconds() / count
+    intervals = [
+        (datetime.fromisoformat(gap["start"]), datetime.fromisoformat(gap["end"]))
+        for gap in gaps
+        if gap.get("start") and gap.get("end")
+    ]
+    samples: list[list[float]] = []
+    for index in range(count):
+        bin_start = start + timedelta(seconds=index * bin_seconds)
+        bin_end = start + timedelta(seconds=(index + 1) * bin_seconds)
+        missing = 0.0
+        for gap_start, gap_end in intervals:
+            overlap_start = max(bin_start, gap_start.astimezone(bin_start.tzinfo))
+            overlap_end = min(bin_end, gap_end.astimezone(bin_end.tzinfo))
+            missing += max(0.0, (overlap_end - overlap_start).total_seconds())
+        covered = max(0.0, bin_seconds - min(bin_seconds, missing))
+        samples.append([round(covered / bin_seconds * 100, 1)])
+    return samples
+
+
+@app.get("/api/device/gaps")
+def device_gaps(bins: int = Query(default=30, ge=2, le=60)) -> dict:
+    """Return today's compact telemetry-coverage summary for the Nextion."""
+    now = datetime.now().astimezone()
+    start = datetime.combine(now.date(), datetime.min.time(), tzinfo=now.tzinfo)
+    try:
+        rows = get_telemetry_timestamps(start, now, DB_PATH)
+        stats = build_gap_statistics(rows, range_start=start, range_end=now, now=now)
+    except sqlite3.Error as error:
+        raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
+    latest = stats["gaps"][-1] if stats["gaps"] else None
+    return {
+        "start": start.isoformat(),
+        "end": now.isoformat(),
+        "coverage_percent": stats["coverage_percent"],
+        "gap_count": stats["gap_count"],
+        "longest_gap_seconds": stats["longest_gap_seconds"],
+        "latest_start": latest["start"] if latest else None,
+        "latest_end": latest["end"] if latest else None,
+        "samples": _gap_coverage_samples(stats["gaps"], start, now, bins),
     }
 
 

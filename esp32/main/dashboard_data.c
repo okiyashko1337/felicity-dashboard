@@ -194,3 +194,68 @@ bool dashboard_fetch_chart(const char *base_url, const char *metric, dashboard_c
     cJSON_Delete(document);
     return chart->count > 0 && chart->channels > 0;
 }
+
+void dashboard_sample_gaps(dashboard_gaps_t *gaps)
+{
+    memset(gaps, 0, sizeof(*gaps));
+    gaps->coverage_percent = 98.7f;
+    gaps->gap_count = 2;
+    gaps->longest_gap_seconds = 94;
+    snprintf(gaps->latest_start, sizeof(gaps->latest_start), "2026-08-02T10:21:00+02:00");
+    snprintf(gaps->latest_end, sizeof(gaps->latest_end), "2026-08-02T10:22:34+02:00");
+    gaps->chart.count = 24;
+    gaps->chart.channels = 1;
+    for (size_t i = 0; i < gaps->chart.count; ++i) {
+        gaps->chart.samples[i][0] = (i == 9 || i == 17) ? 35.0f : 100.0f;
+    }
+}
+
+bool dashboard_fetch_gaps(const char *base_url, dashboard_gaps_t *gaps)
+{
+    char url[224];
+    snprintf(url, sizeof(url), "%s/api/device/gaps?bins=%d",
+             base_url, DASHBOARD_CHART_MAX_SAMPLES);
+    response_buffer_t response = {0};
+    esp_http_client_config_t config = {
+        .url = url, .event_handler = http_event, .user_data = &response, .timeout_ms = 15000,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t result = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    if (result != ESP_OK || status != 200 || !response.data) {
+        ESP_LOGW(TAG, "GET gaps failed: %s, HTTP %d", esp_err_to_name(result), status);
+        free(response.data);
+        return false;
+    }
+
+    cJSON *document = cJSON_Parse(response.data);
+    free(response.data);
+    cJSON *samples = document ? cJSON_GetObjectItemCaseSensitive(document, "samples") : NULL;
+    if (!cJSON_IsArray(samples)) {
+        cJSON_Delete(document);
+        return false;
+    }
+    memset(gaps, 0, sizeof(*gaps));
+    gaps->coverage_percent = json_number(document, NULL, "coverage_percent");
+    gaps->gap_count = (int)json_number(document, NULL, "gap_count");
+    gaps->longest_gap_seconds = (int)json_number(document, NULL, "longest_gap_seconds");
+    cJSON *latest_start = cJSON_GetObjectItemCaseSensitive(document, "latest_start");
+    cJSON *latest_end = cJSON_GetObjectItemCaseSensitive(document, "latest_end");
+    if (cJSON_IsString(latest_start)) {
+        snprintf(gaps->latest_start, sizeof(gaps->latest_start), "%s", latest_start->valuestring);
+    }
+    if (cJSON_IsString(latest_end)) {
+        snprintf(gaps->latest_end, sizeof(gaps->latest_end), "%s", latest_end->valuestring);
+    }
+    cJSON *row = NULL;
+    cJSON_ArrayForEach(row, samples) {
+        if (gaps->chart.count >= DASHBOARD_CHART_MAX_SAMPLES || !cJSON_IsArray(row)) break;
+        cJSON *item = cJSON_GetArrayItem(row, 0);
+        gaps->chart.samples[gaps->chart.count++][0] =
+            cJSON_IsNumber(item) ? (float)item->valuedouble : 0.0f;
+    }
+    gaps->chart.channels = gaps->chart.count ? 1 : 0;
+    cJSON_Delete(document);
+    return gaps->chart.count > 0;
+}

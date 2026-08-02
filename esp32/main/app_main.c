@@ -61,6 +61,8 @@ void app_main(void)
     dashboard_page_t page = DASH_PAGE_HOME;
     dashboard_snapshot_t snapshot = {0};
     dashboard_chart_t chart = {0};
+    dashboard_gaps_t gaps = {0};
+    bool gaps_live = false;
     nextion_show_page(page);
 
 #if CONFIG_FELICITY_EMULATOR
@@ -81,7 +83,7 @@ void app_main(void)
         TickType_t now = xTaskGetTickCount();
 #if CONFIG_FELICITY_EMULATOR
         if (now >= next_demo_page) {
-            page = page >= DASH_PAGE_TODAY ? DASH_PAGE_HOME : (dashboard_page_t)(page + 1);
+            page = page >= DASH_PAGE_GAPS ? DASH_PAGE_HOME : (dashboard_page_t)(page + 1);
             ESP_LOGI(TAG, "Demo navigation: %s", touch_page_name(page));
             nextion_show_page(page);
             next_poll = 0;
@@ -96,16 +98,34 @@ void app_main(void)
             next_chart = 0;
         }
         if (now >= next_poll) {
+            if (page == DASH_PAGE_GAPS) {
+                nextion_render_gaps(&gaps, gaps_live);
+                next_poll = now + pdMS_TO_TICKS(2000);
+            } else {
 #if CONFIG_FELICITY_EMULATOR
-            bool live = true;
+                bool live = true;
 #else
-            bool live = dashboard_fetch_current(CONFIG_FELICITY_API_BASE_URL, &snapshot);
+                bool live = dashboard_fetch_current(CONFIG_FELICITY_API_BASE_URL, &snapshot);
 #endif
-            if (page == DASH_PAGE_HOME) nextion_render_home(&snapshot, live);
-            else nextion_render_detail(page, &snapshot, live);
-            next_poll = now + pdMS_TO_TICKS(2000);
+                if (page == DASH_PAGE_HOME) nextion_render_home(&snapshot, live);
+                else nextion_render_detail(page, &snapshot, live);
+                next_poll = now + pdMS_TO_TICKS(2000);
+            }
         }
-        if (page >= DASH_PAGE_PV && page <= DASH_PAGE_TODAY && now >= next_chart) {
+        if (page >= DASH_PAGE_PV && page <= DASH_PAGE_GAPS && now >= next_chart) {
+            if (page == DASH_PAGE_GAPS) {
+#if CONFIG_FELICITY_EMULATOR
+                dashboard_sample_gaps(&gaps);
+                gaps_live = true;
+#else
+                gaps_live = dashboard_fetch_gaps(CONFIG_FELICITY_API_BASE_URL, &gaps);
+#endif
+                nextion_render_gaps(&gaps, gaps_live);
+                if (gaps_live) nextion_render_chart(page, &gaps.chart);
+                next_chart = now + pdMS_TO_TICKS(30000);
+                vTaskDelay(pdMS_TO_TICKS(20));
+                continue;
+            }
             const char *metric = touch_page_name(page);
 #if CONFIG_FELICITY_EMULATOR
             dashboard_sample_chart(metric, &chart);

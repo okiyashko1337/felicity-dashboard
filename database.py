@@ -305,6 +305,27 @@ def get_parsed_telemetry_history(
     ]
 
 
+def get_telemetry_timestamps(
+    start: datetime,
+    end: datetime,
+    db_path: Path = DB_PATH,
+) -> list[dict]:
+    """Return only timestamps for inexpensive coverage-gap analysis."""
+    start_utc = start.astimezone(timezone.utc).isoformat()
+    end_utc = end.astimezone(timezone.utc).isoformat()
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT timestamp
+            FROM telemetry_snapshots
+            WHERE timestamp >= ? AND timestamp < ?
+            ORDER BY timestamp ASC, id ASC
+            """,
+            (start_utc, end_utc),
+        ).fetchall()
+    return [{"timestamp": row["timestamp"]} for row in rows]
+
+
 def get_telemetry_range(
     start: datetime,
     end: datetime,
