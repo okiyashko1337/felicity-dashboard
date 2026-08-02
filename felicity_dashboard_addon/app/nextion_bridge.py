@@ -437,6 +437,7 @@ class NextionDashboard:
         self.chart_start_time: dict[str, datetime] = {}
         self.chart_end_time: dict[str, datetime] = {}
         self.chart_axis_bucket: dict[str, int] = {}
+        self.chart_axis_signature: dict[str, tuple[str, ...]] = {}
         self.api_executor = ThreadPoolExecutor(
             max_workers=3,
             thread_name_prefix="felicity-nextion-api",
@@ -501,8 +502,14 @@ class NextionDashboard:
             elif name.startswith("chart:"):
                 metric = result.get("metric")
                 if metric in DETAIL_PAGES:
+                    if self.device_charts.get(metric) == result:
+                        continue
                     self.device_charts[metric] = result
-                    replay_page = replay_page or self.page == metric
+                    if self.page == metric:
+                        # A compact chart refresh must not repaint the whole page:
+                        # doing so made the fixed time labels flash every 10/60 s.
+                        self.reset_chart_sweep(metric)
+                        self.begin_waveform_replay()
         return replay_page
 
     def navigate(self, page: str) -> bool:
@@ -512,6 +519,7 @@ class NextionDashboard:
         self.transport.command(f"page {display_page}")
         self.transport.enable_touch_coordinates()
         self.page = page
+        self.chart_axis_signature.pop(page, None)
         if page == "gaps":
             self.gap_data = None
         self.transport.invalidate_page(page)
@@ -998,10 +1006,14 @@ class NextionDashboard:
 
     def render_fixed_time_axis(self, page: str) -> None:
         """Label full-day charts and the rolling System window without ambiguity."""
-        self.transport.command("fill 58,245,364,18,2307")
         values = ("-10m", "-5m", "NOW") if page == "system" else (
             "00:00", "12:00", "24:00"
         )
+        signature = tuple(values)
+        if self.chart_axis_signature.get(page) == signature:
+            return
+        self.chart_axis_signature[page] = signature
+        self.transport.command("fill 58,245,364,18,2307")
         positions = (CHART_LEFT, 214, CHART_RIGHT - 52)
         for component, value, x in zip(
             ("tXLeft", "tXMid", "tXRight"), values, positions
@@ -1083,6 +1095,7 @@ class NextionDashboard:
 
     def run_connected(self) -> None:
         self.transport.invalidate_page()
+        self.chart_axis_signature.clear()
         self.transport.command("bkcmd=0")
         self.transport.enable_touch_coordinates()
         self.transport.command("page home")
