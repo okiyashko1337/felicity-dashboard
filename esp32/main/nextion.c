@@ -64,7 +64,7 @@ void nextion_show_page(dashboard_page_t page)
     command("page %s", name);
 }
 
-void nextion_render_home(const dashboard_snapshot_t *s, bool live)
+void nextion_render_home(const dashboard_snapshot_t *s, const dashboard_summary_t *summary, bool live)
 {
     char value[64];
     text(180, 3, 70, 26, 2, live ? 2016 : 63488, 162, live ? "LIVE" : "NO DATA");
@@ -72,6 +72,8 @@ void nextion_render_home(const dashboard_snapshot_t *s, bool live)
     text(175, 55, 134, 20, 2, 2047, 2307, "HOME LOAD");
     text(332, 55, 134, 20, 2, 2047, 2307, "BATTERY");
     text(18, 165, 134, 20, 2, 2047, 2307, "GRID");
+    text(175, 165, 134, 20, 2, 2047, 2307, "SYSTEM");
+    text(332, 165, 134, 20, 2, 2047, 2307, "TODAY");
 
     snprintf(value, sizeof(value), "%.0fW", s->pv_total_w);
     text(18, 80, 132, 28, 3, 65535, 2307, value);
@@ -89,9 +91,20 @@ void nextion_render_home(const dashboard_snapshot_t *s, bool live)
     text(18, 190, 132, 28, 3, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.0fW %.0fHz", s->grid_power_w, s->grid_frequency_hz);
     text(18, 226, 134, 26, 2, 65535, 2307, value);
+    snprintf(value, sizeof(value), "%.0f%%", summary->cpu_percent);
+    text(175, 190, 132, 28, 3, 65535, 2307, value);
+    snprintf(value, sizeof(value), "R%.0f T%.0f D%.0f", summary->memory_percent,
+             summary->temperature_c, summary->disk_percent);
+    text(175, 226, 134, 26, 2, 65535, 2307, value);
+    snprintf(value, sizeof(value), "%.1fkWh", summary->today_pv_kwh);
+    text(332, 190, 132, 28, 3, 65535, 2307, value);
+    snprintf(value, sizeof(value), "L%.1f C%.0f%%", summary->today_load_kwh,
+             summary->today_coverage_percent);
+    text(332, 226, 134, 26, 2, 65535, 2307, value);
 }
 
-void nextion_render_detail(dashboard_page_t page, const dashboard_snapshot_t *s, bool live)
+void nextion_render_detail(dashboard_page_t page, const dashboard_snapshot_t *s,
+                           const dashboard_summary_t *summary, bool live)
 {
     char main[48] = "--";
     char a[72] = "";
@@ -117,11 +130,16 @@ void nextion_render_detail(dashboard_page_t page, const dashboard_snapshot_t *s,
         snprintf(b, sizeof(b), "EXCHANGE  %.0f W", s->grid_power_w);
         snprintf(c, sizeof(c), "FREQUENCY  %.2f Hz", s->grid_frequency_hz);
     } else if (page == DASH_PAGE_SYSTEM) {
-        snprintf(main, sizeof(main), "SYSTEM");
-        snprintf(a, sizeof(a), "RASPBERRY HISTORY");
+        snprintf(main, sizeof(main), "%.1f%% CPU", summary->cpu_percent);
+        snprintf(a, sizeof(a), "RAM  %.1f%%", summary->memory_percent);
+        snprintf(b, sizeof(b), "TEMP  %.1f C", summary->temperature_c);
+        snprintf(c, sizeof(c), "DISK  %.1f%%", summary->disk_percent);
     } else if (page == DASH_PAGE_TODAY) {
-        snprintf(main, sizeof(main), "TODAY");
-        snprintf(a, sizeof(a), "PV / LOAD HISTORY");
+        snprintf(main, sizeof(main), "PV  %.2f kWh", summary->today_pv_kwh);
+        snprintf(a, sizeof(a), "LOAD  %.2f kWh", summary->today_load_kwh);
+        snprintf(b, sizeof(b), "COVERAGE  %.0f%%", summary->today_coverage_percent);
+        snprintf(c, sizeof(c), "GRID +%.2f / -%.2f kWh",
+                 summary->today_grid_import_kwh, summary->today_grid_export_kwh);
     }
     text(30, 3, 50, 26, 2, 65519, 162, "BACK");
     char upper[16];

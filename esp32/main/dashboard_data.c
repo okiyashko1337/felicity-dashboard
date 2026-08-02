@@ -120,6 +120,56 @@ bool dashboard_fetch_current(const char *base_url, dashboard_snapshot_t *snapsho
     return ok;
 }
 
+void dashboard_sample_summary(dashboard_summary_t *summary)
+{
+    *summary = (dashboard_summary_t){
+        .cpu_percent = 8.0f, .memory_percent = 45.0f,
+        .temperature_c = 68.0f, .disk_percent = 18.0f,
+        .today_pv_kwh = 24.6f, .today_load_kwh = 16.2f,
+        .today_coverage_percent = 151.9f,
+        .today_grid_import_kwh = 0.4f, .today_grid_export_kwh = 8.1f,
+    };
+}
+
+static bool dashboard_parse_summary(const char *json, dashboard_summary_t *summary)
+{
+    cJSON *document = cJSON_Parse(json);
+    if (!document) return false;
+    memset(summary, 0, sizeof(*summary));
+    summary->cpu_percent = json_number(document, "system", "cpu_percent");
+    summary->memory_percent = json_number(document, "system", "memory_percent");
+    summary->temperature_c = json_number(document, "system", "temperature_c");
+    summary->disk_percent = json_number(document, "system", "disk_percent");
+    summary->today_pv_kwh = json_number(document, "today", "pv_kwh");
+    summary->today_load_kwh = json_number(document, "today", "load_kwh");
+    summary->today_coverage_percent = json_number(document, "today", "coverage_percent");
+    summary->today_grid_import_kwh = json_number(document, "today", "grid_import_kwh");
+    summary->today_grid_export_kwh = json_number(document, "today", "grid_export_kwh");
+    cJSON_Delete(document);
+    return true;
+}
+
+bool dashboard_fetch_summary(const char *base_url, dashboard_summary_t *summary)
+{
+    char url[192];
+    snprintf(url, sizeof(url), "%s/api/device/summary", base_url);
+    response_buffer_t response = {0};
+    esp_http_client_config_t config = {
+        .url = url, .event_handler = http_event, .user_data = &response, .timeout_ms = 5000,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t result = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    bool ok = result == ESP_OK && status == 200 && response.data &&
+              dashboard_parse_summary(response.data, summary);
+    if (!ok) {
+        ESP_LOGW(TAG, "GET %s failed: %s, HTTP %d", url, esp_err_to_name(result), status);
+    }
+    free(response.data);
+    return ok;
+}
+
 void dashboard_sample_chart(const char *metric, dashboard_chart_t *chart)
 {
     memset(chart, 0, sizeof(*chart));
