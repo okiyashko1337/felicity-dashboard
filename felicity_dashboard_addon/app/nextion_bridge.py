@@ -10,6 +10,7 @@ import math
 import signal
 import time
 from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, time as datetime_time, timedelta
 from typing import Any, Callable
 from urllib.parse import urlencode
@@ -44,6 +45,8 @@ CHART_STEP = 4
 CHART_REPLAY_STEP = 8
 CHART_HISTORY_MAX_POINTS = 30
 CHART_REPLAY_SAMPLES_PER_TICK = 3
+MAX_FRAME_BUFFER_BYTES = 4096
+TOUCH_KEEPALIVE_SECONDS = 10.0
 CHART_COLORS = {
     "pv": (65519, 64495, 2047),
     "load": (65535, 2016, 65519, 2047),
@@ -207,8 +210,12 @@ def coverage_bins(
 class NextionFrameParser:
     """Split the Nextion byte stream into frames terminated by three 0xFF bytes."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_buffer_bytes: int = MAX_FRAME_BUFFER_BYTES) -> None:
         self.buffer = bytearray()
+        self.max_buffer_bytes = max_buffer_bytes
+
+    def reset(self) -> None:
+        self.buffer.clear()
 
     def feed(self, chunk: bytes) -> list[bytes]:
         self.buffer.extend(chunk)
@@ -217,8 +224,25 @@ class NextionFrameParser:
             position = self.buffer.find(TERMINATOR)
             if position < 0:
                 break
-            frames.append(bytes(self.buffer[:position]))
+            frame = bytes(self.buffer[:position])
+            if len(frame) > self.max_buffer_bytes:
+                # A valid short event may follow a burst of noise before the
+                # next terminator. Recover its last recognizable frame prefix.
+                start = max(frame.rfind(bytes((prefix,))) for prefix in (0x66, 0x67, 0x68, 0x88))
+                frame = frame[start:] if start >= 0 else b""
+                logger.warning("Recovered Nextion stream after oversized frame")
+            if frame:
+                frames.append(frame)
             del self.buffer[:position + len(TERMINATOR)]
+        if len(self.buffer) > self.max_buffer_bytes:
+            # Preserve at most a partial terminator. A damaged/noisy UART stream
+            # must never grow memory forever or poison all later touch frames.
+            trailing_ff = min(2, len(self.buffer) - len(self.buffer.rstrip(b"\xff")))
+            dropped = len(self.buffer) - trailing_ff
+            suffix = self.buffer[-trailing_ff:] if trailing_ff else b""
+            self.buffer.clear()
+            self.buffer.extend(suffix)
+            logger.warning("Discarded %s unterminated Nextion bytes", dropped)
         return frames
 
 
@@ -238,6 +262,7 @@ class NextionTransport:
             timeout=0.05,
             write_timeout=1,
         )
+        self.parser.reset()
         self.connection.reset_input_buffer()
 
     def close(self) -> None:
@@ -249,6 +274,10 @@ class NextionTransport:
         if self.connection is None:
             raise serial.SerialException("Nextion serial port is closed")
         self.connection.write(command.encode("ascii", errors="replace") + TERMINATOR)
+
+    def enable_touch_coordinates(self) -> None:
+        """Enable raw press/release coordinates; safe to repeat as a keepalive."""
+        self.command("sendxy=1")
 
     def set_text(self, page: str, component: str, value: Any) -> None:
         key = (page, component)
@@ -347,8 +376,10 @@ class FelicityApi:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
-    def get(self, path: str) -> dict:
-        with urlopen(f"{self.base_url}{path}", timeout=self.timeout) as response:
+    def get(self, path: str, timeout: float | None = None) -> dict:
+        with urlopen(
+            f"{self.base_url}{path}", timeout=self.timeout if timeout is None else timeout
+        ) as response:
             return json.load(response)
 
     def current(self) -> dict:
@@ -359,10 +390,15 @@ class FelicityApi:
 
     def today(self, now: datetime | None = None) -> dict:
         now = now or datetime.now().astimezone()
+        query = urlencode({"day": now.date().isoformat()})
+        return self.get(f"/api/analytics/day-summary?{query}")
+
+    def today_gaps(self, now: datetime | None = None) -> dict:
+        now = now or datetime.now().astimezone()
         start = datetime.combine(now.date(), datetime_time.min, tzinfo=now.tzinfo)
         end = start + timedelta(days=1)
         query = urlencode({"start": start.isoformat(), "end": end.isoformat(), "max_points": 480})
-        return self.get(f"/api/analytics?{query}")
+        return self.get(f"/api/analytics?{query}", timeout=max(15.0, self.timeout))
 
 
 class NextionDashboard:
@@ -385,6 +421,7 @@ class NextionDashboard:
         self.live: dict | None = None
         self.system_data: dict | None = None
         self.today_data: dict | None = None
+        self.gap_data: dict | None = None
         self.histories: dict[str, deque[tuple[int, ...]]] = {
             page: deque(maxlen=HISTORY_LENGTH) for page in DETAIL_PAGES
         }
@@ -394,13 +431,76 @@ class NextionDashboard:
         self.chart_start_time: dict[str, datetime] = {}
         self.chart_end_time: dict[str, datetime] = {}
         self.chart_axis_bucket: dict[str, int] = {}
+        self.api_executor = ThreadPoolExecutor(
+            max_workers=3,
+            thread_name_prefix="felicity-nextion-api",
+        )
+        self.api_polls: dict[str, Future[dict]] = {}
+
+    def close(self) -> None:
+        for future in self.api_polls.values():
+            future.cancel()
+        self.api_polls.clear()
+        self.api_executor.shutdown(wait=True, cancel_futures=True)
+
+    def schedule_api_poll(self, name: str, request: Callable[[], dict]) -> None:
+        """Start at most one background request of each kind."""
+        if name not in self.api_polls:
+            self.api_polls[name] = self.api_executor.submit(request)
+
+    def collect_api_results(self) -> bool:
+        """Apply completed API requests without ever blocking UART handling."""
+        replay_page = False
+        labels = {
+            "live": "Current data",
+            "system": "System data",
+            "today": "Today's analytics",
+            "gaps": "Today's gap analytics",
+        }
+        for name, future in tuple(self.api_polls.items()):
+            if not future.done():
+                continue
+            del self.api_polls[name]
+            try:
+                result = future.result()
+            except Exception as error:
+                logger.warning("%s unavailable: %s", labels[name], error)
+                continue
+
+            if name == "live":
+                self.live = result
+                self.remember_live()
+                if self.page in DETAIL_PAGES:
+                    self.append_active_waveform()
+                    self.render_detail()
+                elif self.page == "home":
+                    self.render_home()
+            elif name == "system":
+                self.system_data = result
+                if self.page == "home":
+                    self.render_home()
+                elif self.page == "system":
+                    self.render_detail()
+            elif name == "today":
+                self.today_data = result
+                if self.page == "home":
+                    self.render_home()
+                elif self.page == "today":
+                    self.render_detail()
+            elif name == "gaps":
+                self.gap_data = result
+                replay_page = self.page == "gaps"
+        return replay_page
 
     def navigate(self, page: str) -> bool:
         if page == self.page:
             return False
         display_page = DARK_DETAIL_TEMPLATE_PAGE if page in LEGACY_LIGHT_PAGES else page
         self.transport.command(f"page {display_page}")
+        self.transport.enable_touch_coordinates()
         self.page = page
+        if page == "gaps":
+            self.gap_data = None
         self.transport.invalidate_page(page)
         # Let the display finish painting the new bitmap before drawing dynamic
         # xstr text over it. Otherwise the page paint can erase the first frame.
@@ -433,7 +533,7 @@ class NextionDashboard:
                 if changed:
                     logger.info("Nextion page: %s", page)
                 return changed
-        if len(frame) >= 6 and frame[0] in {0x67, 0x68} and frame[5] == 0:
+        if len(frame) >= 6 and frame[0] in {0x67, 0x68} and frame[5] in {0, 1}:
             x = frame[1] << 8 | frame[2]
             y = frame[3] << 8 | frame[4]
             return self.handle_touch(x, y)
@@ -504,7 +604,7 @@ class NextionDashboard:
         if self.page == "gaps":
             now = self.clock()
             start = datetime.combine(now.date(), datetime_time.min, tzinfo=now.tzinfo)
-            gaps = (self.today_data or {}).get("gap_statistics", {}).get("gaps", [])
+            gaps = (self.gap_data or {}).get("gap_statistics", {}).get("gaps", [])
             elapsed = max(0.0, min(86400.0, (now - start).total_seconds()))
             point_count = max(
                 2,
@@ -840,7 +940,7 @@ class NextionDashboard:
             )
 
     def render_gaps(self) -> None:
-        gaps = (self.today_data or {}).get("gap_statistics", {})
+        gaps = (self.gap_data or {}).get("gap_statistics", {})
         gap_list = gaps.get("gaps", [])
         latest = gap_list[-1] if gap_list else None
         self.transport.set_color("gaps", "tBack", 65519)
@@ -857,7 +957,7 @@ class NextionDashboard:
         now = self.clock()
         start = datetime.combine(now.date(), datetime_time.min, tzinfo=now.tzinfo)
         end = min(start + timedelta(days=1), now)
-        gaps = (self.today_data or {}).get("gap_statistics", {}).get("gaps", [])
+        gaps = (self.gap_data or {}).get("gap_statistics", {}).get("gaps", [])
         self.transport.clear_waveform()
         self.transport.add_waveform_batch(0, coverage_bins(gaps, start, end))
 
@@ -884,42 +984,36 @@ class NextionDashboard:
     def run_connected(self) -> None:
         self.transport.invalidate_page()
         self.transport.command("bkcmd=0")
-        self.transport.command("sendxy=1")
+        self.transport.enable_touch_coordinates()
         self.transport.command("page home")
         self.page = "home"
-        next_clock = next_live = next_system = next_today = 0.0
+        next_clock = next_live = next_system = next_today = next_touch_keepalive = 0.0
         force_render = True
         while running:
             cycle = time.monotonic()
             for frame in self.transport.read_frames():
                 force_render = self.handle_frame(frame) or force_render
 
+            force_render = self.collect_api_results() or force_render
+
+            if cycle >= next_touch_keepalive:
+                self.transport.enable_touch_coordinates()
+                next_touch_keepalive = cycle + TOUCH_KEEPALIVE_SECONDS
+
             if cycle >= next_live:
-                try:
-                    self.live = self.api.current()
-                    self.remember_live()
-                except Exception as error:  # keep the screen alive across API restarts
-                    logger.warning("Current data unavailable: %s", error)
+                self.schedule_api_poll("live", self.api.current)
                 next_live = cycle + self.live_interval
-                if self.page in DETAIL_PAGES:
-                    self.append_active_waveform()
-                    self.render_detail()
-                elif self.page == "home":
-                    self.render_home()
 
             if cycle >= next_system:
-                try:
-                    self.system_data = self.api.system()
-                except Exception as error:
-                    logger.warning("System data unavailable: %s", error)
+                self.schedule_api_poll("system", self.api.system)
                 next_system = cycle + self.system_interval
 
-            if cycle >= next_today or (force_render and self.page in {"today", "gaps"}):
-                try:
-                    self.today_data = self.api.today(self.clock())
-                except Exception as error:
-                    logger.warning("Today's analytics unavailable: %s", error)
+            if cycle >= next_today or (force_render and self.page == "today"):
+                self.schedule_api_poll("today", lambda: self.api.today(self.clock()))
                 next_today = cycle + self.analytics_interval
+
+            if force_render and self.page == "gaps" and self.gap_data is None:
+                self.schedule_api_poll("gaps", lambda: self.api.today_gaps(self.clock()))
 
             if force_render:
                 self.render_page(replay=True)
@@ -946,18 +1040,21 @@ def main() -> int:
     transport = NextionTransport(args.port, args.baudrate)
     dashboard = NextionDashboard(transport, FelicityApi(args.api), live_interval=args.interval)
 
-    while running:
-        try:
-            logger.info("Connecting Nextion on %s at %s baud", args.port, args.baudrate)
-            transport.open()
-            dashboard.run_connected()
-        except (OSError, serial.SerialException) as error:
-            logger.error("Nextion connection lost: %s", error)
-            transport.close()
-            if running:
-                time.sleep(5)
-        finally:
-            transport.close()
+    try:
+        while running:
+            try:
+                logger.info("Connecting Nextion on %s at %s baud", args.port, args.baudrate)
+                transport.open()
+                dashboard.run_connected()
+            except (OSError, serial.SerialException) as error:
+                logger.error("Nextion connection lost: %s", error)
+                transport.close()
+                if running:
+                    time.sleep(5)
+            finally:
+                transport.close()
+    finally:
+        dashboard.close()
     logger.info("Nextion bridge stopped")
     return 0
 

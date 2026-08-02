@@ -3,21 +3,31 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 from config import DB_PATH
 from analytics import build_daily_aggregates, daily_increment
 
 
-def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
+@contextmanager
+def connect(db_path: Path = DB_PATH) -> Iterator[sqlite3.Connection]:
+    """Open a transactional SQLite connection and always close it afterward."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path, timeout=5)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA busy_timeout=5000")
-    return connection
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA busy_timeout=5000")
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def initialize_database(db_path: Path = DB_PATH) -> None:

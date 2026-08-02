@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.10.0
+
+- Add compact current-telemetry and chart endpoints for constrained IoT clients.
+- Add an ESP32-C3 client for the existing NX4827P043 Nextion dashboard.
+- Preserve touch navigation and render live detail graphs without a local Raspberry Pi display bridge.
+- Add separate hardware and deterministic QEMU builds plus native touch-frame parser tests.
+
+## 0.9.5
+
+- Keep touch input responsive while API requests run in bounded background workers.
+- Recover Nextion coordinate reporting automatically and accept both press and release events.
+- Bound and reset the UART parser buffer so damaged frames cannot accumulate indefinitely.
+- Close every SQLite connection deterministically to prevent long-running resource degradation.
+
+## 0.9.4
+
+- Load the TODAY card from the persisted daily energy aggregate instead of scanning raw telemetry.
+- Keep the heavier data-gap calculation separate and request it only when opening the gaps page.
+- Prevent the TODAY value from becoming stale when a full-day raw query exceeds the bridge timeout.
+
 ## 0.9.3
 
 - Replace the wordmark with a clipped-safe 18px yin-yang drawn by Nextion primitives.
