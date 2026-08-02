@@ -19,11 +19,11 @@ from database import (
     get_latest_system_snapshot,
     get_system_range,
     get_system_history,
-    get_parsed_telemetry_history,
     get_telemetry_timestamps,
     get_telemetry_history,
     get_telemetry_range,
     get_telemetry_range_sampled,
+    get_parsed_telemetry_range_sampled,
     get_energy_daily,
     ensure_energy_daily,
     initialize_database,
@@ -151,30 +151,81 @@ def _device_chart_sample(metric: str, data: dict) -> list[float]:
     raise HTTPException(status_code=422, detail=f"Unsupported chart metric: {metric}")
 
 
+DEVICE_CHART_BINS = 180
+DEVICE_CHART_INTERVAL_MINUTES = 8
+DEVICE_SYSTEM_CHART_BINS = 60
+DEVICE_SYSTEM_WINDOW_MINUTES = 10
+
+
+def _device_chart_channels(metric: str) -> int:
+    return {"pv": 3, "load": 4, "battery": 2, "grid": 4, "system": 4, "today": 2}[metric]
+
+
+def _device_chart_buckets(
+    metric: str,
+    rows: list[dict],
+    start: datetime,
+    end: datetime,
+    bins: int = DEVICE_CHART_BINS,
+) -> list[list[float] | None]:
+    """Average timestamped rows into fixed wall-clock bins, leaving gaps empty."""
+    channels = _device_chart_channels(metric)
+    totals = [[0.0] * channels for _ in range(bins)]
+    counts = [0] * bins
+    bin_seconds = (end - start).total_seconds() / bins
+    for row in rows:
+        timestamp = datetime.fromisoformat(row["timestamp"]).astimezone(start.tzinfo)
+        index = int((timestamp - start).total_seconds() / bin_seconds)
+        if not 0 <= index < bins:
+            continue
+        if metric == "system":
+            data = row["data"]
+            sample = [
+                _value(data, "cpu_percent"),
+                _value(data, "memory", "percent"),
+                _value(data, "cpu_temperature_c"),
+                _value(data, "disk", "percent"),
+            ]
+        else:
+            sample = _device_chart_sample(metric, row["parsed"])
+        for channel, value in enumerate(sample):
+            totals[index][channel] += value
+        counts[index] += 1
+    return [
+        [round(value / counts[index], 2) for value in totals[index]]
+        if counts[index]
+        else None
+        for index in range(bins)
+    ]
+
+
 @app.get("/api/device/chart")
 def device_chart(
     metric: Literal["pv", "load", "battery", "grid", "system", "today"],
-    limit: int = Query(default=90, ge=2, le=180),
 ) -> dict:
-    """Return compact chart samples tailored to the Nextion client."""
+    """Return fixed-day energy charts or a detailed ten-minute System chart."""
+    now = datetime.now().astimezone()
     if metric == "system":
-        rows = get_system_history(limit, DB_PATH)
-        samples = [
-            [
-                _value(row["data"], "cpu_percent"),
-                _value(row["data"], "memory", "percent"),
-                _value(row["data"], "cpu_temperature_c"),
-                _value(row["data"], "disk", "percent"),
-            ]
-            for row in rows
-        ]
+        start = now - timedelta(minutes=DEVICE_SYSTEM_WINDOW_MINUTES)
+        end = now
+        bins = DEVICE_SYSTEM_CHART_BINS
+        rows = get_system_range(start, end, bins, DB_PATH)
+        interval = {"interval_seconds": 10}
     else:
-        rows = get_parsed_telemetry_history(limit, DB_PATH)
-        samples = [_device_chart_sample(metric, row["parsed"]) for row in rows]
+        start = datetime.combine(now.date(), datetime.min.time(), tzinfo=now.tzinfo)
+        end = start + timedelta(days=1)
+        bins = DEVICE_CHART_BINS
+        rows = get_parsed_telemetry_range_sampled(
+            start, now, DEVICE_CHART_BINS * 4, DB_PATH
+        )
+        interval = {"interval_minutes": DEVICE_CHART_INTERVAL_MINUTES}
+    samples = _device_chart_buckets(metric, rows, start, end, bins)
     return {
         "metric": metric,
-        "start": rows[0]["timestamp"] if rows else None,
-        "end": rows[-1]["timestamp"] if rows else None,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "channels": _device_chart_channels(metric),
+        **interval,
         "samples": samples,
     }
 
@@ -204,8 +255,24 @@ def _gap_coverage_samples(
     return samples
 
 
+def _device_gap_buckets(
+    gaps: list[dict], start: datetime, now: datetime
+) -> list[list[float] | None]:
+    """Build fixed eight-minute coverage bins and leave the future empty."""
+    interval = timedelta(minutes=DEVICE_CHART_INTERVAL_MINUTES)
+    samples: list[list[float] | None] = []
+    for index in range(DEVICE_CHART_BINS):
+        bin_start = start + index * interval
+        if bin_start >= now:
+            samples.append(None)
+            continue
+        bin_end = min(bin_start + interval, now)
+        samples.extend(_gap_coverage_samples(gaps, bin_start, bin_end, 1))
+    return samples
+
+
 @app.get("/api/device/gaps")
-def device_gaps(bins: int = Query(default=30, ge=2, le=60)) -> dict:
+def device_gaps() -> dict:
     """Return today's compact telemetry-coverage summary for the Nextion."""
     now = datetime.now().astimezone()
     start = datetime.combine(now.date(), datetime.min.time(), tzinfo=now.tzinfo)
@@ -217,13 +284,15 @@ def device_gaps(bins: int = Query(default=30, ge=2, le=60)) -> dict:
     latest = stats["gaps"][-1] if stats["gaps"] else None
     return {
         "start": start.isoformat(),
-        "end": now.isoformat(),
+        "end": (start + timedelta(days=1)).isoformat(),
         "coverage_percent": stats["coverage_percent"],
         "gap_count": stats["gap_count"],
         "longest_gap_seconds": stats["longest_gap_seconds"],
         "latest_start": latest["start"] if latest else None,
         "latest_end": latest["end"] if latest else None,
-        "samples": _gap_coverage_samples(stats["gaps"], start, now, bins),
+        "channels": 1,
+        "interval_minutes": DEVICE_CHART_INTERVAL_MINUTES,
+        "samples": _device_gap_buckets(stats["gaps"], start, now),
     }
 
 

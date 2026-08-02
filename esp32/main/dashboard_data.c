@@ -173,11 +173,13 @@ bool dashboard_fetch_summary(const char *base_url, dashboard_summary_t *summary)
 void dashboard_sample_chart(const char *metric, dashboard_chart_t *chart)
 {
     memset(chart, 0, sizeof(*chart));
-    chart->count = 24;
+    bool system_chart = strcmp(metric, "system") == 0;
+    chart->count = system_chart ? 60 : DASHBOARD_CHART_MAX_SAMPLES;
     chart->channels = strcmp(metric, "pv") == 0 ? 3 :
                       strcmp(metric, "battery") == 0 ? 2 : 4;
     if (strcmp(metric, "today") == 0) chart->channels = 2;
     for (size_t i = 0; i < chart->count; ++i) {
+        chart->valid[i] = system_chart || i < 90;
         float phase = (float)i / (float)(chart->count - 1);
         if (strcmp(metric, "battery") == 0) {
             chart->samples[i][0] = 68.0f + phase * 12.0f;
@@ -205,8 +207,7 @@ void dashboard_sample_chart(const char *metric, dashboard_chart_t *chart)
 bool dashboard_fetch_chart(const char *base_url, const char *metric, dashboard_chart_t *chart)
 {
     char url[224];
-    snprintf(url, sizeof(url), "%s/api/device/chart?metric=%s&limit=%d",
-             base_url, metric, DASHBOARD_CHART_MAX_SAMPLES);
+    snprintf(url, sizeof(url), "%s/api/device/chart?metric=%s", base_url, metric);
     response_buffer_t response = {0};
     esp_http_client_config_t config = {
         .url = url, .event_handler = http_event, .user_data = &response, .timeout_ms = 5000,
@@ -229,16 +230,21 @@ bool dashboard_fetch_chart(const char *base_url, const char *metric, dashboard_c
         return false;
     }
     memset(chart, 0, sizeof(*chart));
+    chart->channels = (size_t)json_number(document, NULL, "channels");
     cJSON *row = NULL;
     cJSON_ArrayForEach(row, samples) {
-        if (chart->count >= DASHBOARD_CHART_MAX_SAMPLES || !cJSON_IsArray(row)) break;
+        if (chart->count >= DASHBOARD_CHART_MAX_SAMPLES) break;
         size_t channel = 0;
-        cJSON *item = NULL;
-        cJSON_ArrayForEach(item, row) {
-            if (channel >= DASHBOARD_CHART_MAX_CHANNELS) break;
-            chart->samples[chart->count][channel++] = cJSON_IsNumber(item) ? (float)item->valuedouble : 0.0f;
+        if (cJSON_IsArray(row)) {
+            cJSON *item = NULL;
+            cJSON_ArrayForEach(item, row) {
+                if (channel >= DASHBOARD_CHART_MAX_CHANNELS) break;
+                chart->samples[chart->count][channel++] =
+                    cJSON_IsNumber(item) ? (float)item->valuedouble : 0.0f;
+            }
+            chart->valid[chart->count] = channel > 0;
         }
-        if (chart->count == 0) chart->channels = channel;
+        if (chart->channels == 0 && channel > 0) chart->channels = channel;
         chart->count++;
     }
     cJSON_Delete(document);
@@ -253,9 +259,10 @@ void dashboard_sample_gaps(dashboard_gaps_t *gaps)
     gaps->longest_gap_seconds = 94;
     snprintf(gaps->latest_start, sizeof(gaps->latest_start), "2026-08-02T10:21:00+02:00");
     snprintf(gaps->latest_end, sizeof(gaps->latest_end), "2026-08-02T10:22:34+02:00");
-    gaps->chart.count = 24;
+    gaps->chart.count = DASHBOARD_CHART_MAX_SAMPLES;
     gaps->chart.channels = 1;
     for (size_t i = 0; i < gaps->chart.count; ++i) {
+        gaps->chart.valid[i] = i < 90;
         gaps->chart.samples[i][0] = (i == 9 || i == 17) ? 35.0f : 100.0f;
     }
 }
@@ -263,8 +270,7 @@ void dashboard_sample_gaps(dashboard_gaps_t *gaps)
 bool dashboard_fetch_gaps(const char *base_url, dashboard_gaps_t *gaps)
 {
     char url[224];
-    snprintf(url, sizeof(url), "%s/api/device/gaps?bins=%d",
-             base_url, DASHBOARD_CHART_MAX_SAMPLES);
+    snprintf(url, sizeof(url), "%s/api/device/gaps", base_url);
     response_buffer_t response = {0};
     esp_http_client_config_t config = {
         .url = url, .event_handler = http_event, .user_data = &response, .timeout_ms = 15000,
@@ -300,10 +306,15 @@ bool dashboard_fetch_gaps(const char *base_url, dashboard_gaps_t *gaps)
     }
     cJSON *row = NULL;
     cJSON_ArrayForEach(row, samples) {
-        if (gaps->chart.count >= DASHBOARD_CHART_MAX_SAMPLES || !cJSON_IsArray(row)) break;
-        cJSON *item = cJSON_GetArrayItem(row, 0);
-        gaps->chart.samples[gaps->chart.count++][0] =
-            cJSON_IsNumber(item) ? (float)item->valuedouble : 0.0f;
+        if (gaps->chart.count >= DASHBOARD_CHART_MAX_SAMPLES) break;
+        if (cJSON_IsArray(row)) {
+            cJSON *item = cJSON_GetArrayItem(row, 0);
+            if (cJSON_IsNumber(item)) {
+                gaps->chart.samples[gaps->chart.count][0] = (float)item->valuedouble;
+                gaps->chart.valid[gaps->chart.count] = true;
+            }
+        }
+        gaps->chart.count++;
     }
     gaps->chart.channels = gaps->chart.count ? 1 : 0;
     cJSON_Delete(document);

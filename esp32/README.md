@@ -37,6 +37,11 @@ The client reads `/api/device/current`, `/api/device/chart`, the slow-changing
 Tapping the date area opens the coverage page without loading full telemetry
 rows from SQLite. System and Today values refresh every 60 seconds.
 
+Energy, battery, grid, daily, and gap charts use a fixed `00:00-24:00`
+timeline with 180 eight-minute samples. The System chart instead shows the
+latest ten minutes with up to 60 ten-second samples. For full System detail,
+set the Home Assistant add-on `system_interval` option to `10` seconds.
+
 ## Emulator build
 
 The emulator configuration avoids Wi-Fi and prints every Nextion command as an

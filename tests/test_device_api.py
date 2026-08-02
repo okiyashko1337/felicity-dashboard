@@ -3,7 +3,13 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app import _device_chart_sample, _device_summary_payload, _gap_coverage_samples
+from app import (
+    _device_chart_buckets,
+    _device_chart_sample,
+    _device_gap_buckets,
+    _device_summary_payload,
+    _gap_coverage_samples,
+)
 from database import (
     get_parsed_telemetry_history,
     get_telemetry_timestamps,
@@ -54,6 +60,32 @@ class DeviceApiTests(unittest.TestCase):
             [230.1, 231.2, 229.8, 125],
         )
 
+    def test_chart_buckets_cover_full_day_and_average_eight_minutes(self) -> None:
+        start = datetime(2026, 8, 2, tzinfo=timezone.utc)
+        rows = [
+            {
+                "timestamp": (start + timedelta(minutes=1)).isoformat(),
+                "parsed": {"pv_power_w": {"total": 100, "pv1": 60, "pv2": 40}},
+            },
+            {
+                "timestamp": (start + timedelta(minutes=7)).isoformat(),
+                "parsed": {"pv_power_w": {"total": 300, "pv1": 180, "pv2": 120}},
+            },
+            {
+                "timestamp": (start + timedelta(minutes=8)).isoformat(),
+                "parsed": {"pv_power_w": {"total": 400, "pv1": 240, "pv2": 160}},
+            },
+        ]
+
+        samples = _device_chart_buckets(
+            "pv", rows, start, start + timedelta(days=1)
+        )
+
+        self.assertEqual(len(samples), 180)
+        self.assertEqual(samples[0], [200.0, 120.0, 80.0])
+        self.assertEqual(samples[1], [400.0, 240.0, 160.0])
+        self.assertIsNone(samples[2])
+
     def test_gap_samples_report_coverage_per_bin(self) -> None:
         start = datetime(2026, 8, 2, tzinfo=timezone.utc)
         gaps = [{
@@ -66,6 +98,20 @@ class DeviceApiTests(unittest.TestCase):
         )
 
         self.assertEqual(samples, [[100.0], [0.0], [100.0], [100.0]])
+
+    def test_gap_day_buckets_leave_future_empty(self) -> None:
+        start = datetime(2026, 8, 2, tzinfo=timezone.utc)
+        gaps = [{
+            "start": (start + timedelta(minutes=2)).isoformat(),
+            "end": (start + timedelta(minutes=4)).isoformat(),
+        }]
+
+        samples = _device_gap_buckets(gaps, start, start + timedelta(minutes=10))
+
+        self.assertEqual(len(samples), 180)
+        self.assertEqual(samples[0], [75.0])
+        self.assertEqual(samples[1], [100.0])
+        self.assertIsNone(samples[2])
 
     def test_summary_flattens_system_and_daily_energy(self) -> None:
         payload = _device_summary_payload(

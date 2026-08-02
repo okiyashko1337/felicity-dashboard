@@ -7,6 +7,7 @@ from unittest.mock import patch
 import sqlite3
 
 from database import (
+    get_parsed_telemetry_range_sampled,
     get_system_range,
     get_telemetry_range_sampled,
     initialize_database,
@@ -82,6 +83,29 @@ class DetailRangeTests(unittest.TestCase):
         self.assertLessEqual(len(rows), 8)
         self.assertEqual(rows[0]["id"], 1)
         self.assertEqual(rows[-1]["id"], 30)
+
+    def test_compact_sampled_range_never_loads_raw_packets(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "felicity.db"
+            initialize_database(db_path)
+            start = datetime(2026, 7, 31, tzinfo=timezone.utc)
+            for index in range(20):
+                save_telemetry_snapshot(
+                    [{"large": "raw" * 100}],
+                    {"soc_percent": index},
+                    "test",
+                    db_path,
+                    start + timedelta(seconds=index * 10),
+                )
+
+            rows = get_parsed_telemetry_range_sampled(
+                start, start + timedelta(minutes=5), 5, db_path
+            )
+
+        self.assertLessEqual(len(rows), 5)
+        self.assertEqual(rows[0]["parsed"], {"soc_percent": 0})
+        self.assertEqual(rows[-1]["parsed"], {"soc_percent": 19})
+        self.assertNotIn("raw", rows[0])
 
 
 if __name__ == "__main__":
