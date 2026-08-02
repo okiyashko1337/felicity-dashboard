@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.5
+
+- Make the legacy Raspberry-to-Nextion bridge consume the new compact device charts.
+- Restore the graph immediately from SQLite after an add-on restart.
+- Place daily samples on a fixed `00:00-12:00-24:00` axis.
+- Preserve missing and future intervals instead of joining them with a line.
+- Use the dedicated `-10m/-5m/NOW` axis for the System chart.
+
 ## 0.10.4
 
 - Fix energy, battery, grid, daily, and gap charts to the full current day.

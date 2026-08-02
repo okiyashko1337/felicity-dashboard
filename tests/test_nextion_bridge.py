@@ -91,6 +91,16 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertIn("/api/analytics?", api.requests[1][0])
         self.assertEqual(api.requests[1][1], 15.0)
 
+    def test_device_chart_uses_compact_esp32_endpoint(self) -> None:
+        api = CapturingApi()
+
+        api.device_chart("load")
+
+        self.assertEqual(
+            api.requests[0],
+            ("/api/device/chart?metric=load", 5.0),
+        )
+
     def test_frame_parser_handles_fragmented_page_event(self) -> None:
         parser = NextionFrameParser()
 
@@ -229,6 +239,33 @@ class NextionBridgeTests(unittest.TestCase):
         )
         self.assertEqual(transport.waveform, [])
         self.assertEqual(transport.waveform_batches, [])
+
+    def test_fixed_day_replay_uses_full_width_and_keeps_data_gaps(self) -> None:
+        transport = RecordingTransport()
+        dashboard = NextionDashboard(transport, UnusedApi())
+        dashboard.page = "load"
+        dashboard.device_charts["load"] = {
+            "metric": "load",
+            "start": "2026-08-02T00:00:00+00:00",
+            "end": "2026-08-03T00:00:00+00:00",
+            "samples": [
+                [0, 0, 0, 0],
+                [7500, 2500, 2500, 2500],
+                None,
+                [15000, 5000, 5000, 5000],
+            ],
+        }
+
+        dashboard.replay_waveform()
+
+        lines = [command for command in transport.commands if command.startswith("line ")]
+        self.assertTrue(any(command.startswith("line 60,") for command in lines))
+        self.assertTrue(any(",180," in command for command in lines))
+        self.assertTrue(any(command.startswith("line 420,") for command in lines))
+        self.assertFalse(any(command.startswith("line 180,") and ",420," in command for command in lines))
+        self.assertEqual(transport.text[("load", "tXLeft")], "00:00")
+        self.assertEqual(transport.text[("load", "tXMid")], "12:00")
+        self.assertEqual(transport.text[("load", "tXRight")], "24:00")
 
     def test_detail_values_render_before_incremental_chart_replay(self) -> None:
         now = datetime(2026, 8, 1, 15, 9, 13, tzinfo=timezone.utc)
