@@ -89,6 +89,8 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(transport.text[("home", "tDayS")], "L8.0 C155%")
         self.assertEqual(transport.text[("home", "tSysTitle")], "SYSTEM")
         self.assertEqual(transport.colors[("home", "tSysTitle")], 2047)
+        self.assertEqual(transport.colors[("home", "tPvTitle")], 2047)
+        self.assertEqual(transport.text[("home", "tPvTitle")], "SOLAR")
         self.assertEqual(transport.text[("home", "tFresh")], "LIVE")
         self.assertEqual(transport.text[("home", "tTime")], "15:09:13")
 
@@ -254,7 +256,7 @@ class NextionBridgeTests(unittest.TestCase):
         dashboard.render_page(replay=True)
 
         self.assertIn("fill 0,0,480,272,162", transport.commands)
-        self.assertEqual(transport.text[("system", "tBrand")], "FELICITY")
+        self.assertEqual(transport.text[("system", "tBack")], "BACK")
         self.assertEqual(transport.text[("system", "tTitle")], "SYSTEM")
         self.assertEqual(transport.colors[("system", "tMain")], 2016)
         self.assertEqual(transport.colors[("system", "tC")], 64495)
@@ -280,7 +282,7 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(transport.colors[("battery", "tMain")], 65519)
         self.assertEqual(transport.colors[("battery", "tB")], 64495)
 
-    def test_detail_header_erases_legacy_logo_before_redrawing(self) -> None:
+    def test_detail_header_draws_clipped_safe_yin_yang_and_back_label(self) -> None:
         now = datetime(2026, 8, 2, 8, 47, tzinfo=timezone.utc)
         transport = RecordingTransport()
         dashboard = NextionDashboard(transport, UnusedApi(), clock=lambda: now)
@@ -290,7 +292,18 @@ class NextionBridgeTests(unittest.TestCase):
         dashboard.render_page(replay=True)
 
         self.assertIn("fill 0,0,178,32,162", transport.commands)
-        self.assertEqual(transport.text[("pv", "tBrand")], "FELICITY")
+        self.assertIn("cir 15,16,9,2047", transport.commands)
+        self.assertEqual(transport.text[("pv", "tBack")], "BACK")
+
+    def test_light_detail_pages_open_on_dark_template_without_losing_logical_page(self) -> None:
+        transport = RecordingTransport()
+        dashboard = NextionDashboard(transport, UnusedApi())
+
+        self.assertTrue(dashboard.navigate("battery"))
+        self.assertEqual(transport.commands[-1], "page pv")
+        self.assertEqual(dashboard.page, "battery")
+        self.assertFalse(dashboard.handle_frame(b"\x66\x01"))
+        self.assertEqual(dashboard.page, "battery")
 
     def test_duration_is_compact_for_small_display(self) -> None:
         self.assertEqual(format_duration(42), "42s")
