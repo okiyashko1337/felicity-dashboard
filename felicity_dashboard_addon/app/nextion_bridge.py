@@ -228,7 +228,10 @@ class NextionFrameParser:
             if len(frame) > self.max_buffer_bytes:
                 # A valid short event may follow a burst of noise before the
                 # next terminator. Recover its last recognizable frame prefix.
-                start = max(frame.rfind(bytes((prefix,))) for prefix in (0x66, 0x67, 0x68, 0x88))
+                start = max(
+                    frame.rfind(bytes((prefix,)))
+                    for prefix in (0x65, 0x66, 0x67, 0x68, 0x88)
+                )
                 frame = frame[start:] if start >= 0 else b""
                 logger.warning("Recovered Nextion stream after oversized frame")
             if frame:
@@ -521,6 +524,14 @@ class NextionDashboard:
         logger.info("Nextion page: %s", page)
         return True
 
+    def wake_touchscreen(self) -> None:
+        """Wake a still-powered display and make raw touch events deterministic."""
+        self.transport.command("sleep=0")
+        self.transport.command("thup=1")
+        self.transport.command("ussp=0")
+        self.transport.command("thsp=0")
+        self.transport.enable_touch_coordinates()
+
     def handle_touch(self, x: int, y: int) -> bool:
         if self.page == "home":
             if y < 44 and 260 <= x <= 400:
@@ -536,6 +547,13 @@ class NextionDashboard:
         return False
 
     def handle_frame(self, frame: bytes) -> bool:
+        if len(frame) >= 4 and frame[0] == 0x65 and frame[3] in {0, 1}:
+            if frame[3] == 1:
+                logger.info(
+                    "Nextion component touch: page=%s component=%s",
+                    frame[1], frame[2],
+                )
+            return False
         if len(frame) >= 2 and frame[0] == 0x66:
             page = PAGE_NAMES.get(frame[1])
             if page:
@@ -549,6 +567,8 @@ class NextionDashboard:
         if len(frame) >= 6 and frame[0] in {0x67, 0x68} and frame[5] in {0, 1}:
             x = frame[1] << 8 | frame[2]
             y = frame[3] << 8 | frame[4]
+            if frame[5] == 1:
+                logger.info("Nextion touch: x=%s y=%s page=%s", x, y, self.page)
             return self.handle_touch(x, y)
         return frame == b"\x88"
 
@@ -1084,8 +1104,14 @@ class NextionDashboard:
     def run_connected(self) -> None:
         self.transport.invalidate_page()
         self.transport.command("bkcmd=0")
-        self.transport.enable_touch_coordinates()
+        self.wake_touchscreen()
         self.transport.command("page home")
+        # A page load can briefly consume or defer serial commands. Re-enable
+        # coordinates after it completes instead of relying on the pre-load
+        # command, especially after a long database migration left the display
+        # powered but unattended.
+        time.sleep(0.08)
+        self.transport.enable_touch_coordinates()
         self.page = "home"
         next_clock = next_live = next_system = next_today = next_touch_keepalive = 0.0
         next_chart: dict[str, float] = {}

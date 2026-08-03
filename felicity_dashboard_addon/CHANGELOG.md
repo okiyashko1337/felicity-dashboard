@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1
+
+- Wake a still-powered Nextion explicitly whenever the UART bridge reconnects.
+- Disable Nextion no-serial and no-touch sleep timers while the dashboard is active.
+- Re-enable raw touch coordinates after loading the home page.
+- Log received coordinate or component touch presses for straightforward UART diagnosis.
+
 ## 0.11.0
 
 - Stop storing raw inverter packets and duplicated diagnostic fields in history.

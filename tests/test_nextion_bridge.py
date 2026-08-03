@@ -196,6 +196,21 @@ class NextionBridgeTests(unittest.TestCase):
         finally:
             dashboard.close()
 
+    def test_reconnect_wakes_display_and_disables_automatic_sleep(self) -> None:
+        transport = RecordingTransport()
+        dashboard = NextionDashboard(transport, UnusedApi())
+
+        try:
+            dashboard.wake_touchscreen()
+
+            self.assertEqual(
+                transport.commands,
+                ["sleep=0", "thup=1", "ussp=0", "thsp=0"],
+            )
+            self.assertEqual(transport.touch_enables, 1)
+        finally:
+            dashboard.close()
+
     def test_slow_api_poll_does_not_block_touch_handling(self) -> None:
         transport = RecordingTransport()
         api = BlockingApi()
