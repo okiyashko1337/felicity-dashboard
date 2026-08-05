@@ -7,13 +7,19 @@ typedef struct {
     float pv_total_w;
     float pv1_w;
     float pv2_w;
+    float pv_mppt1_v;
+    float pv_mppt2_v;
     float load_total_w;
     float load_l1_w;
     float load_l2_w;
     float load_l3_w;
     float battery_soc;
     float battery_voltage_v;
+    float battery_current_a;
     float battery_power_w;
+    float battery_bms1_soc;
+    float battery_bms2_soc;
+    size_t battery_bms_count;
     float grid_voltage_l1_v;
     float grid_voltage_l2_v;
     float grid_voltage_l3_v;
@@ -56,6 +62,8 @@ typedef struct {
 void dashboard_sample_snapshot(dashboard_snapshot_t *snapshot);
 bool dashboard_parse_current(const char *json, dashboard_snapshot_t *snapshot);
 bool dashboard_fetch_current(const char *base_url, dashboard_snapshot_t *snapshot);
+bool dashboard_fetch_app_version(const char *base_url, char *version,
+                                 size_t version_size);
 void dashboard_sample_summary(dashboard_summary_t *summary);
 bool dashboard_fetch_summary(const char *base_url, dashboard_summary_t *summary);
 void dashboard_sample_chart(const char *metric, dashboard_chart_t *chart);

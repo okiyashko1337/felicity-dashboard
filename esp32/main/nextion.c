@@ -3,9 +3,12 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "sdkconfig.h"
 
 #if CONFIG_FELICITY_EMULATOR
@@ -15,7 +18,12 @@ static const uart_port_t PORT = UART_NUM_1;
 #endif
 static touch_parser_t parser;
 
-static void command(const char *format, ...)
+enum {
+    COLOR_HEADER = 162,
+    COLOR_LOGO_OUTLINE = 2047,
+};
+
+void nextion_command(const char *format, ...)
 {
     char text[192];
     va_list args;
@@ -31,9 +39,13 @@ static void command(const char *format, ...)
 #endif
 }
 
-static void text(int x, int y, int w, int h, int font, int color, int background, const char *value)
+void nextion_text(int x, int y, int w, int h, int font, int color, int background, const char *value)
 {
-    command("xstr %d,%d,%d,%d,%d,%d,%d,1,1,1,\"%s\"", x, y, w, h, font, color, background, value);
+    /* The shipped HMI contains font resources 0.zi and 1.zi only. Older C
+     * rendering code used logical sizes 2/3, which makes Nextion reject xstr
+     * without drawing text. Match the Python bridge and fall back to font 0. */
+    if (font < 0 || font > 1) font = 0;
+    nextion_command("xstr %d,%d,%d,%d,%d,%d,%d,1,1,1,\"%s\"", x, y, w, h, font, color, background, value);
 }
 
 void nextion_init(void)
@@ -41,7 +53,9 @@ void nextion_init(void)
     touch_parser_reset(&parser);
 #if !CONFIG_FELICITY_EMULATOR
     uart_config_t config = {
-        .baud_rate = CONFIG_FELICITY_NEXTION_BAUD,
+        /* Start at the Nextion factory default so a power-cycled display can
+         * be recovered even if only the volatile `baud` command was used. */
+        .baud_rate = 9600,
         .data_bits = UART_DATA_8_BITS,
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
@@ -53,6 +67,22 @@ void nextion_init(void)
     ESP_ERROR_CHECK(uart_set_pin(PORT, CONFIG_FELICITY_NEXTION_TX_GPIO,
                                  CONFIG_FELICITY_NEXTION_RX_GPIO,
                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+
+    /* Nextion boots more slowly than the ESP32. `bauds` updates both the
+     * active rate and the power-on default; `baud` would be volatile. */
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    nextion_command("bauds=%d", CONFIG_FELICITY_NEXTION_BAUD);
+    ESP_ERROR_CHECK(uart_wait_tx_done(PORT, pdMS_TO_TICKS(250)));
+    vTaskDelay(pdMS_TO_TICKS(100));
+    ESP_ERROR_CHECK(uart_set_baudrate(PORT, CONFIG_FELICITY_NEXTION_BAUD));
+    uart_flush_input(PORT);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    /* Sending the persistent command again also covers displays that were
+     * already configured for the target rate before this boot. */
+    nextion_command("bauds=%d", CONFIG_FELICITY_NEXTION_BAUD);
+    nextion_command("bkcmd=0");
+    nextion_command("sendxy=1");
 #endif
 }
 
@@ -61,96 +91,225 @@ void nextion_show_page(dashboard_page_t page)
     /* The existing HMI uses the dark PV canvas for battery/system as well. */
     const char *name = touch_page_name(page);
     if (page == DASH_PAGE_BATTERY || page == DASH_PAGE_SYSTEM) name = "pv";
-    command("page %s", name);
+    if (page == DASH_PAGE_SETUP) name = "home";
+    nextion_command("page %s", name);
 }
 
-void nextion_render_home(const dashboard_snapshot_t *s, const dashboard_summary_t *summary, bool live)
+static void render_yin_yang(int x)
+{
+    nextion_command("cirs %d,16,9,65535", x);
+    nextion_command("fill %d,7,10,19,%d", x, COLOR_HEADER);
+    nextion_command("cirs %d,11,5,%d", x, COLOR_HEADER);
+    nextion_command("cirs %d,21,5,65535", x);
+    nextion_command("cirs %d,11,1,65535", x);
+    nextion_command("cirs %d,21,1,%d", x, COLOR_HEADER);
+    nextion_command("cir %d,16,9,%d", x, COLOR_LOGO_OUTLINE);
+}
+
+static void render_home_identity(void)
+{
+    nextion_command("fill 0,0,178,32,%d", COLOR_HEADER);
+    render_yin_yang(15);
+}
+
+static void render_detail_identity(void)
+{
+    nextion_command("fill 0,0,178,32,%d", COLOR_HEADER);
+    render_yin_yang(15);
+}
+
+void nextion_render_home_values(const dashboard_snapshot_t *s,
+                                const dashboard_summary_t *summary, bool live)
 {
     char value[64];
-    text(180, 3, 70, 26, 2, live ? 2016 : 63488, 162, live ? "LIVE" : "NO DATA");
-    text(18, 55, 134, 20, 2, 2047, 2307, "SOLAR");
-    text(175, 55, 134, 20, 2, 2047, 2307, "HOME LOAD");
-    text(332, 55, 134, 20, 2, 2047, 2307, "BATTERY");
-    text(18, 165, 134, 20, 2, 2047, 2307, "GRID");
-    text(175, 165, 134, 20, 2, 2047, 2307, "SYSTEM");
-    text(332, 165, 134, 20, 2, 2047, 2307, "TODAY");
+    nextion_text(180, 3, 70, 26, 2, live ? 2016 : 63488, 162, live ? "LIVE" : "NO DATA");
+    nextion_text(18, 55, 134, 20, 2, 2047, 2307, "SOLAR");
+    nextion_text(175, 55, 134, 20, 2, 2047, 2307, "HOME LOAD");
+    nextion_text(332, 55, 134, 20, 2, 2047, 2307, "BATTERY");
+    nextion_text(18, 165, 134, 20, 2, 2047, 2307, "GRID");
+    nextion_text(175, 165, 134, 20, 2, 2047, 2307, "SYSTEM");
+    nextion_text(332, 165, 134, 20, 2, 2047, 2307, "TODAY");
 
     snprintf(value, sizeof(value), "%.0fW", s->pv_total_w);
-    text(18, 80, 132, 28, 3, 65535, 2307, value);
+    nextion_text(18, 80, 132, 28, 3, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.0f+%.0f", s->pv1_w, s->pv2_w);
-    text(18, 116, 134, 26, 2, 65535, 2307, value);
+    nextion_text(18, 116, 134, 26, 2, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.0fW", s->load_total_w);
-    text(175, 80, 132, 28, 3, 65535, 2307, value);
+    nextion_text(175, 80, 132, 28, 3, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.0f/%.0f/%.0f", s->load_l1_w, s->load_l2_w, s->load_l3_w);
-    text(175, 116, 134, 26, 2, 65535, 2307, value);
+    nextion_text(175, 116, 134, 26, 2, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.0f%%", s->battery_soc);
-    text(332, 80, 132, 28, 3, 65535, 2307, value);
+    nextion_text(332, 80, 132, 28, 3, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.1fV %.0fW", s->battery_voltage_v, s->battery_power_w);
-    text(332, 116, 134, 26, 2, 65535, 2307, value);
+    nextion_text(332, 116, 134, 26, 2, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.1fV", (s->grid_voltage_l1_v + s->grid_voltage_l2_v + s->grid_voltage_l3_v) / 3.0f);
-    text(18, 190, 132, 28, 3, 65535, 2307, value);
+    nextion_text(18, 190, 132, 28, 3, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.0fW %.0fHz", s->grid_power_w, s->grid_frequency_hz);
-    text(18, 226, 134, 26, 2, 65535, 2307, value);
+    nextion_text(18, 226, 134, 26, 2, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.0f%%", summary->cpu_percent);
-    text(175, 190, 132, 28, 3, 65535, 2307, value);
+    nextion_text(175, 190, 132, 28, 3, 65535, 2307, value);
     snprintf(value, sizeof(value), "R%.0f T%.0f D%.0f", summary->memory_percent,
              summary->temperature_c, summary->disk_percent);
-    text(175, 226, 134, 26, 2, 65535, 2307, value);
+    nextion_text(175, 226, 134, 26, 2, 65535, 2307, value);
     snprintf(value, sizeof(value), "%.1fkWh", summary->today_pv_kwh);
-    text(332, 190, 132, 28, 3, 65535, 2307, value);
+    nextion_text(332, 190, 132, 28, 3, 65535, 2307, value);
     snprintf(value, sizeof(value), "L%.1f C%.0f%%", summary->today_load_kwh,
              summary->today_coverage_percent);
-    text(332, 226, 134, 26, 2, 65535, 2307, value);
+    nextion_text(332, 226, 134, 26, 2, 65535, 2307, value);
 }
 
-void nextion_render_detail(dashboard_page_t page, const dashboard_snapshot_t *s,
-                           const dashboard_summary_t *summary, bool live)
+void nextion_render_home(const dashboard_snapshot_t *s,
+                         const dashboard_summary_t *summary, bool live)
+{
+    render_home_identity();
+    nextion_render_home_values(s, summary, live);
+}
+
+static void render_detail_header(dashboard_page_t page)
+{
+    const char *title = touch_page_name(page);
+    render_detail_identity();
+    nextion_text(30, 3, 50, 26, 2, 65519, 162, "BACK");
+    char upper[16];
+    snprintf(upper, sizeof(upper), "%s", title);
+    for (char *p = upper; *p; ++p) if (*p >= 'a' && *p <= 'z') *p -= 32;
+    nextion_text(84, 3, 92, 26, 2, 65535, 162, upper);
+    if (page == DASH_PAGE_SYSTEM) {
+        nextion_command("draw 374,54,464,97,2016");
+        nextion_command("draw 375,55,463,96,2016");
+        nextion_text(379, 59, 80, 33, 0, 65535, 2307, "SETUP");
+    }
+}
+
+static void nextion_system_metric(int y, const char *label, const char *value)
+{
+    /* Separate right/left-aligned fields keep every decimal value on the same
+     * vertical axis instead of centering differently sized complete strings. */
+    nextion_command("xstr 172,%d,62,17,0,33840,2307,2,1,1,\"%s\"",
+                    y, label);
+    nextion_command("xstr 242,%d,116,17,0,65535,2307,0,1,1,\"%s\"",
+                    y, value);
+}
+
+static void nextion_detail_metric(int y, const char *label, const char *value)
+{
+    nextion_command("xstr 172,%d,76,17,0,33840,2307,2,1,1,\"%s\"",
+                    y, label);
+    nextion_command("xstr 256,%d,208,17,0,65535,2307,0,1,1,\"%s\"",
+                    y, value);
+}
+
+static void nextion_detail_footer(const char *label, const char *value)
+{
+    nextion_command("xstr 18,85,78,17,0,33840,2307,2,1,1,\"%s\"",
+                    label);
+    nextion_command("xstr 104,85,360,17,0,65535,2307,0,1,1,\"%s\"",
+                    value);
+}
+
+void nextion_render_detail_values(dashboard_page_t page,
+                                  const dashboard_snapshot_t *s,
+                                  const dashboard_summary_t *summary, bool live)
 {
     char main[48] = "--";
     char a[72] = "";
     char b[72] = "";
     char c[72] = "";
-    const char *title = touch_page_name(page);
+    const char *label_a = "";
+    const char *label_b = "";
+    const char *label_c = "";
     if (page == DASH_PAGE_PV) {
         snprintf(main, sizeof(main), "%.0f W", s->pv_total_w);
-        snprintf(a, sizeof(a), "PV1  %.0f W", s->pv1_w);
-        snprintf(b, sizeof(b), "PV2  %.0f W", s->pv2_w);
+        label_a = "PV1";
+        label_b = "PV2";
+        label_c = "MPPT";
+        snprintf(a, sizeof(a), "%.0f W", s->pv1_w);
+        snprintf(b, sizeof(b), "%.0f W", s->pv2_w);
+        snprintf(c, sizeof(c), "%.1f / %.1f V", s->pv_mppt1_v,
+                 s->pv_mppt2_v);
     } else if (page == DASH_PAGE_LOAD) {
         snprintf(main, sizeof(main), "%.0f W", s->load_total_w);
-        snprintf(a, sizeof(a), "L1  %.0f W", s->load_l1_w);
-        snprintf(b, sizeof(b), "L2  %.0f W", s->load_l2_w);
-        snprintf(c, sizeof(c), "L3  %.0f W", s->load_l3_w);
+        label_a = "L1";
+        label_b = "L2";
+        label_c = "L3";
+        snprintf(a, sizeof(a), "%.0f W", s->load_l1_w);
+        snprintf(b, sizeof(b), "%.0f W", s->load_l2_w);
+        snprintf(c, sizeof(c), "%.0f W", s->load_l3_w);
     } else if (page == DASH_PAGE_BATTERY) {
         snprintf(main, sizeof(main), "%.0f%%", s->battery_soc);
-        snprintf(a, sizeof(a), "VOLTAGE  %.1f V", s->battery_voltage_v);
-        snprintf(b, sizeof(b), "POWER  %.0f W", s->battery_power_w);
+        label_a = "VOLTAGE";
+        label_b = "POWER";
+        label_c = "BMS SOC";
+        snprintf(a, sizeof(a), "%.1f V / %.1f A", s->battery_voltage_v,
+                 s->battery_current_a);
+        const char *state = s->battery_power_w > 0 ? "CHARGE" :
+                            s->battery_power_w < 0 ? "DISCHARGE" : "IDLE";
+        snprintf(b, sizeof(b), "%.0f W / %s", s->battery_power_w, state);
+        if (s->battery_bms_count >= 2) {
+            snprintf(c, sizeof(c), "%.0f%% / %.0f%%", s->battery_bms1_soc,
+                     s->battery_bms2_soc);
+        } else if (s->battery_bms_count == 1) {
+            snprintf(c, sizeof(c), "%.0f%%", s->battery_bms1_soc);
+        } else {
+            snprintf(c, sizeof(c), "--");
+        }
     } else if (page == DASH_PAGE_GRID) {
         snprintf(main, sizeof(main), "%.1f V", (s->grid_voltage_l1_v + s->grid_voltage_l2_v + s->grid_voltage_l3_v) / 3.0f);
-        snprintf(a, sizeof(a), "L1/L2/L3 %.1f / %.1f / %.1f V", s->grid_voltage_l1_v, s->grid_voltage_l2_v, s->grid_voltage_l3_v);
-        snprintf(b, sizeof(b), "EXCHANGE  %.0f W", s->grid_power_w);
-        snprintf(c, sizeof(c), "FREQUENCY  %.2f Hz", s->grid_frequency_hz);
+        label_a = "L1/L2/L3";
+        label_b = "EXCHANGE";
+        label_c = "FREQUENCY";
+        snprintf(a, sizeof(a), "%.1f / %.1f / %.1f V", s->grid_voltage_l1_v,
+                 s->grid_voltage_l2_v, s->grid_voltage_l3_v);
+        snprintf(b, sizeof(b), "%.0f W", s->grid_power_w);
+        snprintf(c, sizeof(c), "%.2f Hz", s->grid_frequency_hz);
     } else if (page == DASH_PAGE_SYSTEM) {
         snprintf(main, sizeof(main), "%.1f%% CPU", summary->cpu_percent);
-        snprintf(a, sizeof(a), "RAM  %.1f%%", summary->memory_percent);
-        snprintf(b, sizeof(b), "TEMP  %.1f C", summary->temperature_c);
-        snprintf(c, sizeof(c), "DISK  %.1f%%", summary->disk_percent);
+        snprintf(a, sizeof(a), "%.1f%%", summary->memory_percent);
+        snprintf(b, sizeof(b), "%.1f C", summary->temperature_c);
+        snprintf(c, sizeof(c), "%.1f%%", summary->disk_percent);
     } else if (page == DASH_PAGE_TODAY) {
         snprintf(main, sizeof(main), "PV  %.2f kWh", summary->today_pv_kwh);
-        snprintf(a, sizeof(a), "LOAD  %.2f kWh", summary->today_load_kwh);
-        snprintf(b, sizeof(b), "COVERAGE  %.0f%%", summary->today_coverage_percent);
-        snprintf(c, sizeof(c), "GRID +%.2f / -%.2f kWh",
+        label_a = "LOAD";
+        label_b = "COVERAGE";
+        label_c = "GRID";
+        snprintf(a, sizeof(a), "%.2f kWh", summary->today_load_kwh);
+        snprintf(b, sizeof(b), "%.0f%%", summary->today_coverage_percent);
+        snprintf(c, sizeof(c), "+%.2f / -%.2f kWh",
                  summary->today_grid_import_kwh, summary->today_grid_export_kwh);
     }
-    text(30, 3, 50, 26, 2, 65519, 162, "BACK");
-    char upper[16];
-    snprintf(upper, sizeof(upper), "%s", title);
-    for (char *p = upper; *p; ++p) if (*p >= 'a' && *p <= 'z') *p -= 32;
-    text(84, 3, 92, 26, 2, 65535, 162, upper);
-    text(180, 3, 70, 26, 2, live ? 2016 : 63488, 162, live ? "LIVE" : "NO DATA");
-    text(18, 52, 145, 26, 3, 65535, 2307, main);
-    text(172, 50, 292, 18, 2, 65535, 2307, a);
-    text(172, 69, 292, 18, 2, 65535, 2307, b);
-    text(18, 85, 446, 16, 2, 65535, 2307, c);
+    nextion_text(180, 3, 70, 26, 2, live ? 2016 : 63488, 162, live ? "LIVE" : "NO DATA");
+    if (page == DASH_PAGE_SYSTEM) {
+        nextion_text(18, 60, 140, 30, 0, 65535, 2307, main);
+        nextion_system_metric(49, "RAM", a);
+        nextion_system_metric(67, "TEMP", b);
+        nextion_system_metric(85, "DISK", c);
+    } else {
+        nextion_text(18, 52, 145, 26, 3, 65535, 2307, main);
+        nextion_detail_metric(49, label_a, a);
+        nextion_detail_metric(67, label_b, b);
+        nextion_detail_footer(label_c, c);
+    }
+}
+
+void nextion_render_detail(dashboard_page_t page, const dashboard_snapshot_t *s,
+                           const dashboard_summary_t *summary, bool live)
+{
+    render_detail_header(page);
+    nextion_render_detail_values(page, s, summary, live);
+}
+
+void nextion_render_clock(void)
+{
+    char date[16] = "--.--.----";
+    char clock[16] = "--:--:--";
+    time_t now = time(NULL);
+    struct tm local = {0};
+    if (now > 1700000000 && localtime_r(&now, &local)) {
+        strftime(date, sizeof(date), "%d.%m.%Y", &local);
+        strftime(clock, sizeof(clock), "%H:%M:%S", &local);
+    }
+    nextion_text(255, 3, 115, 26, 0, 65535, COLOR_HEADER, date);
+    nextion_text(375, 3, 98, 26, 0, 65535, COLOR_HEADER, clock);
 }
 
 static void iso_hhmm(const char *iso, char *output, size_t output_size)
@@ -167,28 +326,32 @@ static void duration_text(int seconds, char *output, size_t output_size)
     else snprintf(output, output_size, "%dh %02dm", seconds / 3600, (seconds % 3600) / 60);
 }
 
-void nextion_render_gaps(const dashboard_gaps_t *gaps, bool live)
+void nextion_render_gaps_values(const dashboard_gaps_t *gaps, bool live)
 {
     char main[32], count[48], longest[48], latest[72];
     char duration[24], start[8], end[8];
     snprintf(main, sizeof(main), "%.1f%%", gaps->coverage_percent);
-    snprintf(count, sizeof(count), "GAPS  %d", gaps->gap_count);
+    snprintf(count, sizeof(count), "%d", gaps->gap_count);
     duration_text(gaps->longest_gap_seconds, duration, sizeof(duration));
-    snprintf(longest, sizeof(longest), "LONGEST  %s", duration);
+    snprintf(longest, sizeof(longest), "%s", duration);
     if (gaps->latest_start[0] && gaps->latest_end[0]) {
         iso_hhmm(gaps->latest_start, start, sizeof(start));
         iso_hhmm(gaps->latest_end, end, sizeof(end));
-        snprintf(latest, sizeof(latest), "LAST  %s - %s", start, end);
+        snprintf(latest, sizeof(latest), "%s - %s", start, end);
     } else {
         snprintf(latest, sizeof(latest), "NO GAPS");
     }
-    text(30, 3, 50, 26, 2, 65519, 162, "BACK");
-    text(84, 3, 92, 26, 2, 65535, 162, "GAPS");
-    text(180, 3, 70, 26, 2, live ? 2016 : 63488, 162, live ? "LIVE" : "NO DATA");
-    text(18, 52, 145, 26, 3, 65535, 2307, main);
-    text(172, 50, 292, 18, 2, 65535, 2307, count);
-    text(172, 69, 292, 18, 2, 65535, 2307, longest);
-    text(18, 85, 446, 16, 2, 65535, 2307, latest);
+    nextion_text(180, 3, 70, 26, 2, live ? 2016 : 63488, 162, live ? "LIVE" : "NO DATA");
+    nextion_text(18, 52, 145, 26, 3, 65535, 2307, main);
+    nextion_detail_metric(49, "GAPS", count);
+    nextion_detail_metric(67, "LONGEST", longest);
+    nextion_detail_footer("LAST", latest);
+}
+
+void nextion_render_gaps(const dashboard_gaps_t *gaps, bool live)
+{
+    render_detail_header(DASH_PAGE_GAPS);
+    nextion_render_gaps_values(gaps, live);
 }
 
 static float chart_scaled(dashboard_page_t page, size_t channel, float value)
@@ -216,22 +379,19 @@ void nextion_render_chart(dashboard_page_t page, const dashboard_chart_t *chart)
         [DASH_PAGE_TODAY] = {65519, 2047, 0, 0},
         [DASH_PAGE_GAPS] = {2016, 0, 0, 0},
     };
-    const int left = 60, top = 120, right = 420, bottom = 240;
-    command("fill %d,%d,%d,%d,2307", left, top, right - left + 1, bottom - top + 1);
-    for (int x = left; x <= right; x += 72) command("line %d,%d,%d,%d,6597", x, top, x, bottom);
-    for (int y = top; y <= bottom; y += 30) command("line %d,%d,%d,%d,6597", left, y, right, y);
-    if (page == DASH_PAGE_SYSTEM) {
-        static const char *system_time[] = {"-10", "-5", "NOW"};
-        for (size_t index = 0; index < 3; ++index) {
-            int x = left + (int)index * (right - left) / 2 - 22;
-            text(x, 244, 44, 18, 2, 33840, 2307, system_time[index]);
-        }
-    } else {
-        static const char *hours[] = {"00", "06", "12", "18", "24"};
-        for (size_t index = 0; index < 5; ++index) {
-            int x = left + (int)index * (right - left) / 4 - 17;
-            text(x, 244, 34, 18, 2, 33840, 2307, hours[index]);
-        }
+    /* app_main restores the physical HMI page before every replay. Keep this
+     * function to the visible axis/trace commands so samples arrive on screen
+     * progressively, like a chart recorder, without accumulating old lines. */
+    const int left = 20, top = 128, right = 453, bottom = 247;
+    static const char *day_time[] = {"00:00", "12:00", "24:00"};
+    static const char *system_time[] = {"-10m", "-5m", "NOW"};
+    const char *const *time_labels = page == DASH_PAGE_SYSTEM
+                                         ? system_time
+                                         : day_time;
+    const int time_x[] = {left, (left + right) / 2 - 26, right - 52};
+    for (size_t index = 0; index < 3; ++index) {
+        nextion_command("xstr %d,247,52,18,0,33840,2307,0,1,3,\"%s\"",
+                        time_x[index], time_labels[index]);
     }
     if (!chart || chart->count < 2 || page > DASH_PAGE_GAPS) return;
     for (size_t i = 1; i < chart->count; ++i) {
@@ -241,7 +401,7 @@ void nextion_render_chart(dashboard_page_t page, const dashboard_chart_t *chart)
         for (size_t channel = 0; channel < chart->channels && channel < 4; ++channel) {
             int y1 = bottom - (int)(chart_scaled(page, channel, chart->samples[i - 1][channel]) * (bottom - top));
             int y2 = bottom - (int)(chart_scaled(page, channel, chart->samples[i][channel]) * (bottom - top));
-            command("line %d,%d,%d,%d,%d", x1, y1, x2, y2, colors[page][channel]);
+            nextion_command("line %d,%d,%d,%d,%d", x1, y1, x2, y2, colors[page][channel]);
         }
     }
 }
@@ -255,6 +415,46 @@ bool nextion_read_page_change(dashboard_page_t *page)
     int count = uart_read_bytes(PORT, bytes, sizeof(bytes), 0);
     for (int i = 0; i < count; ++i) {
         if (touch_parser_feed(&parser, bytes[i], page)) return true;
+    }
+    return false;
+#endif
+}
+
+bool nextion_read_touch(uint16_t *x, uint16_t *y)
+{
+#if CONFIG_FELICITY_EMULATOR
+    (void)x;
+    (void)y;
+    return false;
+#else
+    uint8_t byte;
+    touch_event_t event;
+    while (uart_read_bytes(PORT, &byte, 1, 0) == 1) {
+        if (touch_parser_feed_event(&parser, byte, &event) &&
+            event.type == TOUCH_EVENT_COORDINATE && !event.pressed) {
+            if (x) *x = event.x;
+            if (y) *y = event.y;
+            return true;
+        }
+    }
+    return false;
+#endif
+}
+
+bool nextion_read_touch_event(touch_event_t *event)
+{
+#if CONFIG_FELICITY_EMULATOR
+    (void)event;
+    return false;
+#else
+    uint8_t byte;
+    touch_event_t parsed;
+    while (uart_read_bytes(PORT, &byte, 1, 0) == 1) {
+        if (touch_parser_feed_event(&parser, byte, &parsed) &&
+            parsed.type == TOUCH_EVENT_COORDINATE) {
+            if (event) *event = parsed;
+            return true;
+        }
     }
     return false;
 #endif
