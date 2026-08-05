@@ -1,0 +1,39 @@
+name: Commercial license request
+description: Contact the project owner about commercial use of Felicity Dashboard
+title: "[Commercial license] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This request and all replies are public. Do not include confidential information.
+        Opening an issue does not grant commercial permission.
+  - type: input
+    id: organization
+    attributes:
+      label: Organization or project
+      description: Who would use Felicity Dashboard?
+      placeholder: Organization or project name
+    validations:
+      required: true
+  - type: textarea
+    id: intended-use
+    attributes:
+      label: Intended commercial use
+      description: Briefly describe the product, service, or internal use.
+    validations:
+      required: true
+  - type: input
+    id: contact
+    attributes:
+      label: Preferred public contact
+      description: A GitHub username or public business contact page; do not post private details.
+      placeholder: "@username"
+    validations:
+      required: true
+  - type: checkboxes
+    id: acknowledgement
+    attributes:
+      label: Acknowledgement
+      options:
+        - label: I understand that this public request does not grant commercial permission.
+          required: true
