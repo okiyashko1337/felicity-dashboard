@@ -28,6 +28,7 @@ dashboard_page_t touch_page_for_coordinates(dashboard_page_t current, uint16_t x
 static bool consume_frame(touch_parser_t *parser, dashboard_page_t *page)
 {
     bool changed = false;
+    bool display_ready = parser->length >= 1 && parser->bytes[0] == 0x88;
     if (parser->length >= 2 && parser->bytes[0] == 0x66 && parser->bytes[1] <= DASH_PAGE_GAPS) {
         dashboard_page_t next = (dashboard_page_t)parser->bytes[1];
         changed = next != *page;
@@ -40,6 +41,7 @@ static bool consume_frame(touch_parser_t *parser, dashboard_page_t *page)
         *page = next;
     }
     touch_parser_reset(parser);
+    parser->display_ready = display_ready;
     return changed;
 }
 
@@ -55,4 +57,11 @@ bool touch_parser_feed(touch_parser_t *parser, uint8_t byte, dashboard_page_t *p
     }
     if (parser->length < sizeof(parser->bytes)) parser->bytes[parser->length++] = byte;
     return false;
+}
+
+bool touch_parser_take_display_ready(touch_parser_t *parser)
+{
+    bool ready = parser->display_ready;
+    parser->display_ready = false;
+    return ready;
 }

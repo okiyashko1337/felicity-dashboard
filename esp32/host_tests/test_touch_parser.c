@@ -27,6 +27,12 @@ int main(void)
     const uint8_t page_frame[] = {0x66, 0x04, 0xff, 0xff, 0xff};
     assert(feed(&parser, &page, page_frame, sizeof(page_frame)));
     assert(page == DASH_PAGE_GRID);
+
+    const uint8_t display_ready[] = {0x88, 0xff, 0xff, 0xff};
+    assert(!feed(&parser, &page, display_ready, sizeof(display_ready)));
+    assert(touch_parser_take_display_ready(&parser));
+    assert(!touch_parser_take_display_ready(&parser));
+    assert(page == DASH_PAGE_GRID);
     puts("touch parser: OK");
     return 0;
 }

@@ -9,5 +9,8 @@ build*/
 eim_config.toml
 esp32/sdkconfig
 esp32/sdkconfig.hardware
+esp32/sdkconfig.hardware-bridge
 esp32/sdkconfig.qemu.generated
+esp32/sdkconfig.qemu-live.generated
+esp32/sdkconfig.offline-demo.generated
 esp32/managed_components/

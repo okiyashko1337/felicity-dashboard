@@ -22,15 +22,27 @@ idf.py -C esp32 -B build-hardware \
 idf.py -C esp32 -B build-hardware build
 ```
 
-Set the Raspberry API URL and temporary Wi-Fi credentials in the `Felicity
-dashboard client` menu. Credentials are compile-time only for now; captive
-portal provisioning will be added separately.
+The hardware configuration deliberately disables the ESP32-C3 USB PHY and the
+secondary USB console. On this board the active USB PHY can suppress 2.4 GHz
+transmission even though Wi-Fi scanning still works. USB flashing remains
+available through the ROM bootloader; runtime logs use UART0 instead.
+
+On its first boot the board creates an open Wi-Fi network named
+`Felicity-Setup-XXXX`. Connect a phone or laptop to it, open
+`http://192.168.4.1`, and enter the home Wi-Fi network, password, and Raspberry
+API URL. The settings are stored in the ESP32's NVS flash; the password is not
+printed to the serial log.
 
 The Home Assistant add-on must expose its HTTP port to the local network. In
 the add-on Network settings, map `8000/tcp` to host port `8000`, save, and
 restart the add-on. This is LAN-only access; no router port forwarding is
 needed. Set the API URL to the fixed or DHCP-reserved LAN address of the Home
 Assistant host, for example `http://192.168.1.10:8000`.
+
+To reopen setup later, hold the ESP32-C3 Super Mini **BOOT** button for three
+seconds while it is running, then release it. The board clears only its saved
+Felicity Wi-Fi/API settings, restarts, and advertises `Felicity-Setup-XXXX`.
+Pressing RESET or briefly pressing BOOT does not erase the settings.
 
 The client reads `/api/device/current`, `/api/device/chart`, the slow-changing
 `/api/device/summary`, and the timestamp-only `/api/device/gaps` endpoint.
@@ -63,3 +75,34 @@ cc -std=c11 -Wall -Wextra -Werror \
   esp32/main/touch_parser.c esp32/host_tests/test_touch_parser.c \
   -o /tmp/felicity-touch-test && /tmp/felicity-touch-test
 ```
+
+To replace the deterministic samples with the live Raspberry API, build a
+separate image with QEMU's virtual Ethernet interface:
+
+```sh
+idf.py -C esp32 -B build-qemu-live \
+  -DSDKCONFIG=sdkconfig.qemu-live.generated \
+  -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.qemu;sdkconfig.qemu-live" build
+idf.py -C esp32 -B build-qemu-live qemu
+```
+
+This live mode is only for the emulator. The hardware build continues to use
+the ESP32-C3 Wi-Fi radio. The log-only emulator cycles through all dashboard
+pages every five seconds. UART-bridge mode instead uses touch frames from the
+physical Nextion and never changes pages by itself.
+
+## Physical Nextion from QEMU
+
+On macOS, the live emulator can be connected bidirectionally to a Nextion on a
+USB-UART adapter. Drawing commands go to the display and touch frames return to
+QEMU:
+
+```sh
+python3 esp32/tools/qemu_nextion_bridge.py \
+  --qemu /path/to/qemu-system-riscv32 \
+  --flash build-qemu-live/flash_image.bin \
+  --serial /dev/cu.usbserial-XXXX
+```
+
+The display and USB-UART must share ground. Keep the Nextion on its separate
+5 V supply and do not connect another UART host at the same time.

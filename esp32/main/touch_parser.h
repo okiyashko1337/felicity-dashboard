@@ -19,9 +19,11 @@ typedef struct {
     uint8_t bytes[16];
     size_t length;
     unsigned ff_count;
+    bool display_ready;
 } touch_parser_t;
 
 void touch_parser_reset(touch_parser_t *parser);
 bool touch_parser_feed(touch_parser_t *parser, uint8_t byte, dashboard_page_t *page);
+bool touch_parser_take_display_ready(touch_parser_t *parser);
 dashboard_page_t touch_page_for_coordinates(dashboard_page_t current, uint16_t x, uint16_t y);
 const char *touch_page_name(dashboard_page_t page);

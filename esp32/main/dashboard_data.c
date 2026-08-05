@@ -47,10 +47,15 @@ static float json_number(cJSON *root, const char *group, const char *name)
 
 void dashboard_sample_snapshot(dashboard_snapshot_t *s)
 {
+    static float motion = 0.0f;
+    motion += 37.0f;
+    if (motion > 900.0f) motion = -900.0f;
     *s = (dashboard_snapshot_t){
-        .pv_total_w = 3480, .pv1_w = 1770, .pv2_w = 1710,
-        .load_total_w = 1240, .load_l1_w = 410, .load_l2_w = 390, .load_l3_w = 440,
-        .battery_soc = 74, .battery_voltage_v = 52.4f, .battery_power_w = 920,
+        .pv_total_w = 3480 + motion, .pv1_w = 1770 + motion * 0.52f,
+        .pv2_w = 1710 + motion * 0.48f,
+        .load_total_w = 2140 - motion * 0.25f, .load_l1_w = 710 - motion * 0.08f,
+        .load_l2_w = 690 - motion * 0.09f, .load_l3_w = 740 - motion * 0.08f,
+        .battery_soc = 74, .battery_voltage_v = 52.4f, .battery_power_w = 920 + motion,
         .grid_voltage_l1_v = 230.2f, .grid_voltage_l2_v = 231.0f,
         .grid_voltage_l3_v = 229.7f, .grid_power_w = -1320,
         .grid_frequency_hz = 50.0f,

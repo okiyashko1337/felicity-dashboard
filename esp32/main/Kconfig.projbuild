@@ -7,6 +7,23 @@ config FELICITY_EMULATOR
         Uses deterministic sample values and logs Nextion commands. Intended
         for ESP32-C3 QEMU before the real board and display arrive.
 
+config FELICITY_EMULATOR_LIVE_API
+    bool "Use QEMU Ethernet to read the live Raspberry API"
+    depends on FELICITY_EMULATOR
+    default n
+    help
+        Replaces deterministic samples with the OpenCores Ethernet interface
+        emulated by QEMU. This option is never used on the physical board.
+
+config FELICITY_EMULATOR_UART_BRIDGE
+    bool "Expose Nextion on QEMU UART1 instead of log lines"
+    depends on FELICITY_EMULATOR
+    default n
+    help
+        Uses QEMU's second serial backend as the real bidirectional Nextion
+        UART. This allows a macOS relay to forward both drawing commands and
+        physical touchscreen frames.
+
 config FELICITY_API_BASE_URL
     string "Raspberry dashboard API base URL"
     default "http://192.168.1.10:8000"
@@ -18,6 +35,35 @@ config FELICITY_WIFI_SSID
 config FELICITY_WIFI_PASSWORD
     string "Temporary Wi-Fi password"
     default ""
+
+config FELICITY_SNTP_SERVER
+    string "Clock synchronization server"
+    default "pool.ntp.org"
+
+config FELICITY_TIMEZONE
+    string "POSIX timezone used on the display"
+    default "CET-1CEST,M3.5.0,M10.5.0/3"
+    help
+        Europe/Madrid including automatic daylight-saving transitions.
+
+config FELICITY_OFFLINE_DEMO
+    bool "Show clearly labelled demo data while the API is unavailable"
+    depends on !FELICITY_EMULATOR
+    default n
+    help
+        Development-only fallback for testing a physical Nextion without a
+        working dashboard API. Synthetic values are always labelled DEMO and
+        real API data takes over automatically when it becomes available.
+
+config FELICITY_SETUP_BUTTON_GPIO
+    int "GPIO for the BOOT/setup button"
+    depends on !FELICITY_EMULATOR
+    range 0 21
+    default 9
+    help
+        The ESP32-C3 Super Mini BOOT button is connected to GPIO9. Hold it for
+        three seconds while the application is running, then release it, to
+        clear only Felicity network settings and start the setup access point.
 
 config FELICITY_NEXTION_TX_GPIO
     int "ESP32 TX GPIO connected to Nextion RX"
@@ -32,5 +78,20 @@ config FELICITY_NEXTION_RX_GPIO
 config FELICITY_NEXTION_BAUD
     int "Nextion UART baud rate"
     default 115200
+
+config FELICITY_NEXTION_TCP_BRIDGE
+    bool "Temporarily carry Nextion UART over TCP"
+    depends on !FELICITY_EMULATOR
+    default n
+    help
+        Test-only transport for a physical ESP32-C3. A Mac bridge connects to
+        this TCP server and relays the byte stream to a USB-UART Nextion. The
+        production hardware build must leave this disabled.
+
+config FELICITY_NEXTION_TCP_PORT
+    int "Temporary Nextion TCP port"
+    depends on FELICITY_NEXTION_TCP_BRIDGE
+    range 1024 65535
+    default 2323
 
 endmenu
