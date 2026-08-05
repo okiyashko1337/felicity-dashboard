@@ -27,6 +27,31 @@ int main(void)
     const uint8_t page_frame[] = {0x66, 0x04, 0xff, 0xff, 0xff};
     assert(feed(&parser, &page, page_frame, sizeof(page_frame)));
     assert(page == DASH_PAGE_GRID);
+
+    touch_event_t event = {0};
+    touch_parser_reset(&parser);
+    bool received = false;
+    for (size_t i = 0; i < sizeof(pv_touch); ++i) {
+        received |= touch_parser_feed_event(&parser, pv_touch[i], &event);
+    }
+    assert(received);
+    assert(event.type == TOUCH_EVENT_COORDINATE);
+    assert(event.x == 80 && event.y == 100 && !event.pressed);
+
+    const uint8_t press_touch[] = {0x67, 0x00, 0x50, 0x00, 0x64, 0x01, 0xff, 0xff, 0xff};
+    received = false;
+    for (size_t i = 0; i < sizeof(press_touch); ++i) {
+        received |= touch_parser_feed_event(&parser, press_touch[i], &event);
+    }
+    assert(received);
+    assert(event.type == TOUCH_EVENT_COORDINATE);
+    assert(event.x == 80 && event.y == 100 && event.pressed);
+
+    assert(touch_page_for_coordinates(DASH_PAGE_HOME, 15, 15) == DASH_PAGE_SETUP);
+    assert(touch_page_for_coordinates(DASH_PAGE_HOME, 280, 175) == DASH_PAGE_SYSTEM);
+    assert(touch_page_for_coordinates(DASH_PAGE_HOME, 200, 240) == DASH_PAGE_SYSTEM);
+    assert(touch_page_for_coordinates(DASH_PAGE_SYSTEM, 420, 75) == DASH_PAGE_SETUP);
+    assert(touch_page_for_coordinates(DASH_PAGE_PV, 30, 15) == DASH_PAGE_HOME);
     puts("touch parser: OK");
     return 0;
 }

@@ -12,11 +12,11 @@ config FELICITY_API_BASE_URL
     default "http://192.168.1.10:8000"
 
 config FELICITY_WIFI_SSID
-    string "Temporary Wi-Fi SSID"
+    string "Fallback Wi-Fi SSID"
     default ""
 
 config FELICITY_WIFI_PASSWORD
-    string "Temporary Wi-Fi password"
+    string "Fallback Wi-Fi password"
     default ""
 
 config FELICITY_NEXTION_TX_GPIO

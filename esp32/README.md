@@ -22,9 +22,17 @@ idf.py -C esp32 -B build-hardware \
 idf.py -C esp32 -B build-hardware build
 ```
 
-Set the Raspberry API URL and temporary Wi-Fi credentials in the `Felicity
-dashboard client` menu. Credentials are compile-time only for now; captive
-portal provisioning will be added separately.
+Set the Raspberry API URL in the `Felicity dashboard client` menu. Wi-Fi is
+configured on the Nextion display at first boot: the ESP32 scans nearby
+networks, shows five SSIDs per page, and provides alpha, numeric, and symbol
+keyboard layouts. Credentials are written to the `felicity_wifi` NVS namespace
+only after DHCP succeeds. The compile-time SSID and password remain optional
+fallback values for development builds.
+
+If saved credentials cannot connect within 15 seconds, the setup screen opens
+automatically. A successful connection is local-IP based and does not require
+Internet access. The onboarding UI is drawn dynamically on the existing HMI,
+so this firmware does not require a new `.tft` file.
 
 The Home Assistant add-on must expose its HTTP port to the local network. In
 the add-on Network settings, map `8000/tcp` to host port `8000`, save, and
@@ -62,4 +70,8 @@ commands. The frame parser has a native host test:
 cc -std=c11 -Wall -Wextra -Werror \
   esp32/main/touch_parser.c esp32/host_tests/test_touch_parser.c \
   -o /tmp/felicity-touch-test && /tmp/felicity-touch-test
+
+cc -std=c11 -Wall -Wextra -Werror \
+  esp32/main/setup_input.c esp32/host_tests/test_setup_input.c \
+  -o /tmp/felicity-setup-input-test && /tmp/felicity-setup-input-test
 ```

@@ -3,12 +3,46 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "cJSON.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 
 static const char *TAG = "dashboard_api";
+
+static int64_t days_from_civil(int year, unsigned month, unsigned day)
+{
+    year -= month <= 2;
+    int era = (year >= 0 ? year : year - 399) / 400;
+    unsigned yoe = (unsigned)(year - era * 400);
+    unsigned shifted_month = (unsigned)((int)month + (month > 2 ? -3 : 9));
+    unsigned doy = (153 * shifted_month + 2) / 5 + day - 1;
+    unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return (int64_t)era * 146097 + (int64_t)doe - 719468;
+}
+
+static void sync_clock_from_iso8601(const char *timestamp)
+{
+    int year, month, day, hour, minute, second;
+    if (!timestamp || sscanf(timestamp, "%d-%d-%dT%d:%d:%d", &year, &month,
+                             &day, &hour, &minute, &second) != 6) return;
+    int64_t epoch = days_from_civil(year, (unsigned)month, (unsigned)day) * 86400 +
+                    hour * 3600 + minute * 60 + second;
+    const char *zone = timestamp + 19;
+    while (*zone && *zone != '+' && *zone != '-') ++zone;
+    if (*zone == '+' || *zone == '-') {
+        int offset_hour = 0, offset_minute = 0;
+        if (sscanf(zone + 1, "%d:%d", &offset_hour, &offset_minute) == 2) {
+            int offset = offset_hour * 3600 + offset_minute * 60;
+            epoch += *zone == '-' ? offset : -offset;
+        }
+    }
+    if (epoch > 1700000000) {
+        struct timeval value = {.tv_sec = (time_t)epoch, .tv_usec = 0};
+        settimeofday(&value, NULL);
+    }
+}
 
 typedef struct {
     char *data;
@@ -49,8 +83,12 @@ void dashboard_sample_snapshot(dashboard_snapshot_t *s)
 {
     *s = (dashboard_snapshot_t){
         .pv_total_w = 3480, .pv1_w = 1770, .pv2_w = 1710,
+        .pv_mppt1_v = 418.9f, .pv_mppt2_v = 376.2f,
         .load_total_w = 1240, .load_l1_w = 410, .load_l2_w = 390, .load_l3_w = 440,
-        .battery_soc = 74, .battery_voltage_v = 52.4f, .battery_power_w = 920,
+        .battery_soc = 74, .battery_voltage_v = 52.4f,
+        .battery_current_a = 17.6f, .battery_power_w = 920,
+        .battery_bms1_soc = 74, .battery_bms2_soc = 73,
+        .battery_bms_count = 2,
         .grid_voltage_l1_v = 230.2f, .grid_voltage_l2_v = 231.0f,
         .grid_voltage_l3_v = 229.7f, .grid_power_w = -1320,
         .grid_frequency_hz = 50.0f,
@@ -74,13 +112,32 @@ bool dashboard_parse_current(const char *json, dashboard_snapshot_t *s)
     s->pv_total_w = json_number(parsed, "pv_power_w", "total");
     s->pv1_w = json_number(parsed, "pv_power_w", "pv1");
     s->pv2_w = json_number(parsed, "pv_power_w", "pv2");
+    s->pv_mppt1_v = json_number(parsed, "pv_voltage_v", "mppt1");
+    s->pv_mppt2_v = json_number(parsed, "pv_voltage_v", "mppt2");
     s->load_total_w = json_number(parsed, "load_power_w", "total");
     s->load_l1_w = json_number(parsed, "load_power_w", "l1");
     s->load_l2_w = json_number(parsed, "load_power_w", "l2");
     s->load_l3_w = json_number(parsed, "load_power_w", "l3");
     s->battery_soc = json_number(parsed, NULL, "soc_percent");
     s->battery_voltage_v = json_number(parsed, NULL, "battery_voltage_v");
+    s->battery_current_a = json_number(parsed, NULL, "battery_current_a");
     s->battery_power_w = json_number(parsed, NULL, "battery_power_w");
+    cJSON *batteries = cJSON_GetObjectItemCaseSensitive(parsed, "batteries");
+    if (cJSON_IsArray(batteries)) {
+        cJSON *battery = NULL;
+        cJSON_ArrayForEach(battery, batteries) {
+            cJSON *soc = cJSON_GetObjectItemCaseSensitive(battery, "soc_percent");
+            if (!cJSON_IsNumber(soc)) continue;
+            if (s->battery_bms_count == 0) {
+                s->battery_bms1_soc = (float)soc->valuedouble;
+            } else if (s->battery_bms_count == 1) {
+                s->battery_bms2_soc = (float)soc->valuedouble;
+            } else {
+                break;
+            }
+            ++s->battery_bms_count;
+        }
+    }
     s->grid_voltage_l1_v = json_number(parsed, "grid_voltage_v", "l1");
     s->grid_voltage_l2_v = json_number(parsed, "grid_voltage_v", "l2");
     s->grid_voltage_l3_v = json_number(parsed, "grid_voltage_v", "l3");
@@ -90,6 +147,7 @@ bool dashboard_parse_current(const char *json, dashboard_snapshot_t *s)
     cJSON *timestamp = cJSON_GetObjectItemCaseSensitive(document, "timestamp");
     if (cJSON_IsString(timestamp)) {
         snprintf(s->timestamp, sizeof(s->timestamp), "%s", timestamp->valuestring);
+        sync_clock_from_iso8601(timestamp->valuestring);
     }
     cJSON_Delete(document);
     return true;
@@ -115,6 +173,42 @@ bool dashboard_fetch_current(const char *base_url, dashboard_snapshot_t *snapsho
               dashboard_parse_current(response.data, snapshot);
     if (!ok) {
         ESP_LOGW(TAG, "GET %s failed: %s, HTTP %d", url, esp_err_to_name(result), status);
+    }
+    free(response.data);
+    return ok;
+}
+
+bool dashboard_fetch_app_version(const char *base_url, char *version,
+                                 size_t version_size)
+{
+    if (!version || version_size == 0) return false;
+    version[0] = '\0';
+    char url[192];
+    snprintf(url, sizeof(url), "%s/api/status", base_url);
+    response_buffer_t response = {0};
+    esp_http_client_config_t config = {
+        .url = url,
+        .event_handler = http_event,
+        .user_data = &response,
+        .timeout_ms = 4000,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t result = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+
+    bool ok = false;
+    if (result == ESP_OK && status == 200 && response.data) {
+        cJSON *document = cJSON_Parse(response.data);
+        cJSON *item = document
+                          ? cJSON_GetObjectItemCaseSensitive(document,
+                                                             "app_version")
+                          : NULL;
+        if (cJSON_IsString(item) && item->valuestring[0]) {
+            snprintf(version, version_size, "%s", item->valuestring);
+            ok = true;
+        }
+        cJSON_Delete(document);
     }
     free(response.data);
     return ok;
