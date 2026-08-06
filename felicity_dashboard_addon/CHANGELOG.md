@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Reject incomplete or physically inconsistent inverter frames instead of storing synthetic zeroes.
+- Retain the latest 100 anomalous raw replies for incident diagnostics.
+- Show today's anomaly count and latest anomaly time on the full-screen gaps card.
+
 ## 0.11.1
 
 - Wake a still-powered Nextion explicitly whenever the UART bridge reconnects.

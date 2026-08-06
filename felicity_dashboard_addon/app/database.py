@@ -24,6 +24,7 @@ HISTORY_FIELDS = (
 )
 COVERAGE_RETENTION_DAYS = 3
 SYSTEM_RETENTION_HOURS = 48
+ANOMALY_RETENTION_COUNT = 100
 
 
 def _json_dump(value: object) -> str:
@@ -137,6 +138,23 @@ def initialize_database(db_path: Path = DB_PATH) -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_coverage_timestamp
             ON telemetry_coverage(timestamp)
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS telemetry_anomalies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                details_json TEXT NOT NULL,
+                raw_data_json TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_anomaly_timestamp
+            ON telemetry_anomalies(timestamp)
             """
         )
         connection.execute(
@@ -317,6 +335,36 @@ def migrate_compact_storage(db_path: Path = DB_PATH) -> dict:
         "system_rows_removed": system_rows_removed,
         "vacuumed": vacuumed,
     }
+
+
+def save_telemetry_anomaly(
+    raw_data: object,
+    reason: str,
+    details: dict,
+    db_path: Path = DB_PATH,
+    timestamp: Optional[datetime] = None,
+) -> int:
+    """Persist a bounded forensic record without contaminating telemetry history."""
+    timestamp = timestamp or datetime.now(timezone.utc)
+    with connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO telemetry_anomalies
+                (timestamp, reason, details_json, raw_data_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            (timestamp.isoformat(), reason, _json_dump(details), _json_dump(raw_data)),
+        )
+        connection.execute(
+            """
+            DELETE FROM telemetry_anomalies
+            WHERE id NOT IN (
+                SELECT id FROM telemetry_anomalies ORDER BY id DESC LIMIT ?
+            )
+            """,
+            (ANOMALY_RETENTION_COUNT,),
+        )
+        return int(cursor.lastrowid)
 
 
 def save_telemetry_snapshot(
@@ -596,6 +644,32 @@ def get_telemetry_timestamps(
             (start_utc, end_utc),
         ).fetchall()
     return [{"timestamp": row["timestamp"]} for row in rows]
+
+
+def get_telemetry_anomaly_summary(
+    start: datetime,
+    end: datetime,
+    db_path: Path = DB_PATH,
+) -> dict:
+    start_utc = start.astimezone(timezone.utc).isoformat()
+    end_utc = end.astimezone(timezone.utc).isoformat()
+    with connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT timestamp, reason, details_json
+            FROM telemetry_anomalies
+            WHERE timestamp >= ? AND timestamp < ?
+            ORDER BY timestamp
+            """,
+            (start_utc, end_utc),
+        ).fetchall()
+    latest = rows[-1] if rows else None
+    return {
+        "count": len(rows),
+        "latest_timestamp": latest["timestamp"] if latest else None,
+        "latest_reason": latest["reason"] if latest else None,
+        "latest_details": json.loads(latest["details_json"]) if latest else None,
+    }
 
 
 def get_telemetry_range(

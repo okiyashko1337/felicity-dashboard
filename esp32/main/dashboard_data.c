@@ -350,9 +350,11 @@ void dashboard_sample_gaps(dashboard_gaps_t *gaps)
     memset(gaps, 0, sizeof(*gaps));
     gaps->coverage_percent = 98.7f;
     gaps->gap_count = 2;
+    gaps->anomaly_count = 1;
     gaps->longest_gap_seconds = 94;
     snprintf(gaps->latest_start, sizeof(gaps->latest_start), "2026-08-02T10:21:00+02:00");
     snprintf(gaps->latest_end, sizeof(gaps->latest_end), "2026-08-02T10:22:34+02:00");
+    snprintf(gaps->latest_anomaly_timestamp, sizeof(gaps->latest_anomaly_timestamp), "2026-08-02T02:02:41+02:00");
     gaps->chart.count = DASHBOARD_CHART_MAX_SAMPLES;
     gaps->chart.channels = 1;
     for (size_t i = 0; i < gaps->chart.count; ++i) {
@@ -389,14 +391,19 @@ bool dashboard_fetch_gaps(const char *base_url, dashboard_gaps_t *gaps)
     memset(gaps, 0, sizeof(*gaps));
     gaps->coverage_percent = json_number(document, NULL, "coverage_percent");
     gaps->gap_count = (int)json_number(document, NULL, "gap_count");
+    gaps->anomaly_count = (int)json_number(document, NULL, "anomaly_count");
     gaps->longest_gap_seconds = (int)json_number(document, NULL, "longest_gap_seconds");
     cJSON *latest_start = cJSON_GetObjectItemCaseSensitive(document, "latest_start");
     cJSON *latest_end = cJSON_GetObjectItemCaseSensitive(document, "latest_end");
+    cJSON *latest_anomaly = cJSON_GetObjectItemCaseSensitive(document, "latest_anomaly_timestamp");
     if (cJSON_IsString(latest_start)) {
         snprintf(gaps->latest_start, sizeof(gaps->latest_start), "%s", latest_start->valuestring);
     }
     if (cJSON_IsString(latest_end)) {
         snprintf(gaps->latest_end, sizeof(gaps->latest_end), "%s", latest_end->valuestring);
+    }
+    if (cJSON_IsString(latest_anomaly)) {
+        snprintf(gaps->latest_anomaly_timestamp, sizeof(gaps->latest_anomaly_timestamp), "%s", latest_anomaly->valuestring);
     }
     cJSON *row = NULL;
     cJSON_ArrayForEach(row, samples) {

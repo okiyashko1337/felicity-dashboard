@@ -328,24 +328,27 @@ static void duration_text(int seconds, char *output, size_t output_size)
 
 void nextion_render_gaps_values(const dashboard_gaps_t *gaps, bool live)
 {
-    char main[32], count[48], longest[48], latest[72];
-    char duration[24], start[8], end[8];
+    char main[32], count[48], longest[48], anomaly[72];
+    char duration[24], start[8];
     snprintf(main, sizeof(main), "%.1f%%", gaps->coverage_percent);
     snprintf(count, sizeof(count), "%d", gaps->gap_count);
     duration_text(gaps->longest_gap_seconds, duration, sizeof(duration));
     snprintf(longest, sizeof(longest), "%s", duration);
-    if (gaps->latest_start[0] && gaps->latest_end[0]) {
-        iso_hhmm(gaps->latest_start, start, sizeof(start));
-        iso_hhmm(gaps->latest_end, end, sizeof(end));
-        snprintf(latest, sizeof(latest), "%s - %s", start, end);
+    if (gaps->latest_anomaly_timestamp[0]) {
+        iso_hhmm(gaps->latest_anomaly_timestamp, start, sizeof(start));
+        snprintf(anomaly, sizeof(anomaly), "%d  LAST %s", gaps->anomaly_count, start);
     } else {
-        snprintf(latest, sizeof(latest), "NO GAPS");
+        snprintf(anomaly, sizeof(anomaly), "%d", gaps->anomaly_count);
     }
     nextion_text(180, 3, 70, 26, 2, live ? 2016 : 63488, 162, live ? "LIVE" : "NO DATA");
     nextion_text(18, 52, 145, 26, 3, 65535, 2307, main);
     nextion_detail_metric(49, "GAPS", count);
     nextion_detail_metric(67, "LONGEST", longest);
-    nextion_detail_footer("LAST", latest);
+    /* ANOMALIES is wider than the generic footer's 78 px label column.
+     * Give it a dedicated column and preserve an eight-pixel gutter before
+     * the value so the label and count never collide on the Nextion. */
+    nextion_command("xstr 18,85,96,17,0,33840,2307,2,1,1,\"ANOMALIES\"");
+    nextion_command("xstr 122,85,342,17,0,65535,2307,0,1,1,\"%s\"", anomaly);
 }
 
 void nextion_render_gaps(const dashboard_gaps_t *gaps, bool live)

@@ -10,10 +10,11 @@ import time
 from pathlib import Path
 
 from config import DB_PATH, FELICITY_HOST, FELICITY_PORT, POLL_INTERVAL_SECONDS
-from database import initialize_database, save_telemetry_snapshot
+from database import initialize_database, save_telemetry_anomaly, save_telemetry_snapshot
 from felicity_local import (
     FelicityLocalClient,
     FelicityProtocolError,
+    TelemetryAnomaly,
     parse_realtime_packets,
 )
 
@@ -77,6 +78,19 @@ def main() -> int:
                 next_status_log = cycle_started + 60
             if args.once:
                 break
+        except TelemetryAnomaly as error:
+            anomaly_id = save_telemetry_anomaly(
+                raw_data=packets,
+                reason=error.reason,
+                details=error.details,
+                db_path=args.db,
+            )
+            logger.warning(
+                "Rejected anomaly #%s: %s %s",
+                anomaly_id,
+                error.reason,
+                error.details,
+            )
         except (ConnectionError, OSError, FelicityProtocolError) as error:
             logger.error("Polling failed: %s", error)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
