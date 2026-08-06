@@ -368,6 +368,57 @@ static float chart_scaled(dashboard_page_t page, size_t channel, float value)
     return scaled;
 }
 
+typedef struct {
+    const char *left_top;
+    const char *left_middle;
+    const char *left_bottom;
+    const char *right_top;
+    const char *right_middle;
+    const char *right_bottom;
+} chart_axis_labels_t;
+
+static chart_axis_labels_t chart_axis_labels(dashboard_page_t page)
+{
+    switch (page) {
+        case DASH_PAGE_PV:
+        case DASH_PAGE_LOAD:
+        case DASH_PAGE_TODAY:
+            return (chart_axis_labels_t){"15kW", "7.5k", "0", NULL, NULL, NULL};
+        case DASH_PAGE_BATTERY:
+            return (chart_axis_labels_t){"100%", "50", "0",
+                                         "+15k", "0W", "-15k"};
+        case DASH_PAGE_GRID:
+            return (chart_axis_labels_t){"260V", "220", "180",
+                                         "+15k", "0W", "-15k"};
+        case DASH_PAGE_SYSTEM:
+            return (chart_axis_labels_t){"100", "50", "0", NULL, NULL, NULL};
+        case DASH_PAGE_GAPS:
+            return (chart_axis_labels_t){"100%", "50", "0", NULL, NULL, NULL};
+        default:
+            return (chart_axis_labels_t){"", "", "", NULL, NULL, NULL};
+    }
+}
+
+static void render_chart_axis_labels(dashboard_page_t page, int top, int bottom)
+{
+    chart_axis_labels_t labels = chart_axis_labels(page);
+    const int middle = (top + bottom) / 2 - 8;
+    const int bottom_label = bottom - 16;
+    const int positions[] = {top, middle, bottom_label};
+    const char *left[] = {labels.left_top, labels.left_middle,
+                          labels.left_bottom};
+    const char *right[] = {labels.right_top, labels.right_middle,
+                           labels.right_bottom};
+    for (size_t index = 0; index < 3; ++index) {
+        nextion_command("xstr 13,%d,34,16,0,33840,2307,2,1,1,\"%s\"",
+                        positions[index], left[index]);
+        if (right[index]) {
+            nextion_command("xstr 424,%d,43,16,0,33840,2307,0,1,1,\"%s\"",
+                            positions[index], right[index]);
+        }
+    }
+}
+
 void nextion_render_chart(dashboard_page_t page, const dashboard_chart_t *chart)
 {
     static const int colors[][4] = {
@@ -382,7 +433,11 @@ void nextion_render_chart(dashboard_page_t page, const dashboard_chart_t *chart)
     /* app_main restores the physical HMI page before every replay. Keep this
      * function to the visible axis/trace commands so samples arrive on screen
      * progressively, like a chart recorder, without accumulating old lines. */
-    const int left = 20, top = 128, right = 453, bottom = 247;
+    /* Keep both vertical scales outside the trace rectangle. Battery and Grid
+     * use a secondary right-hand scale, while every page retains exactly the
+     * same plot geometry and time-axis alignment. */
+    const int left = 50, top = 128, right = 421, bottom = 240;
+    render_chart_axis_labels(page, top, bottom);
     static const char *day_time[] = {"00:00", "12:00", "24:00"};
     static const char *system_time[] = {"-10m", "-5m", "NOW"};
     const char *const *time_labels = page == DASH_PAGE_SYSTEM
