@@ -338,6 +338,10 @@ class NextionBridgeTests(unittest.TestCase):
         dashboard = NextionDashboard(transport, UnusedApi(), clock=lambda: now)
         dashboard.page = "gaps"
         dashboard.gap_data = {
+            "anomaly_statistics": {
+                "count": 1,
+                "latest_timestamp": "2026-08-02T02:02:41+02:00",
+            },
             "gap_statistics": {
                 "coverage_percent": 99.0,
                 "gap_count": 1,
@@ -355,6 +359,7 @@ class NextionBridgeTests(unittest.TestCase):
         self.assertEqual(transport.text[("gaps", "tXMid")], "11:59")
         self.assertEqual(transport.text[("gaps", "tXRight")], "23:59")
         self.assertEqual(len(dashboard.chart_replays["gaps"]), 24)
+        self.assertEqual(transport.text[("gaps", "tC")], "ANOMALIES  1  LAST 02:02")
         self.assertEqual(transport.cleared, 0)
         self.assertEqual(transport.waveform_batches, [])
 

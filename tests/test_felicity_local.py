@@ -9,7 +9,7 @@ from database import (
     initialize_database,
     save_telemetry_snapshot,
 )
-from felicity_local import decode_json_stream, parse_realtime_packets
+from felicity_local import TelemetryAnomaly, decode_json_stream, parse_realtime_packets
 
 
 INVERTER_PACKET = {
@@ -98,6 +98,29 @@ class FelicityLocalTests(unittest.TestCase):
         self.assertFalse(parsed["healthy"])
         self.assertEqual(parsed["warning_codes"], [3])
         self.assertEqual(parsed["warning_messages"], ["низкий SOC батареи"])
+
+    def test_rejects_partial_inverter_packet_instead_of_filling_zeroes(self) -> None:
+        partial = {**INVERTER_PACKET}
+        partial.pop("Home")
+        partial.pop("ACin")
+        partial.pop("Batt2")
+
+        with self.assertRaises(TelemetryAnomaly) as raised:
+            parse_realtime_packets([partial])
+
+        self.assertEqual(raised.exception.reason, "incomplete_packet")
+        self.assertEqual(
+            raised.exception.details["invalid_sections"],
+            ["Home", "ACin", "Batt2"],
+        )
+
+    def test_rejects_grid_power_with_zero_grid_voltage(self) -> None:
+        inconsistent = {**INVERTER_PACKET, "ACin": [[0, 0, 0]], "GrCTPP": [[120, 0, 0], [], [120]]}
+
+        with self.assertRaises(TelemetryAnomaly) as raised:
+            parse_realtime_packets([inconsistent])
+
+        self.assertEqual(raised.exception.reason, "inconsistent_grid_telemetry")
 
     def test_database_round_trip(self) -> None:
         parsed = parse_realtime_packets([INVERTER_PACKET])

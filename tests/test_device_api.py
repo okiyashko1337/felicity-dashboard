@@ -12,13 +12,42 @@ from app import (
 )
 from database import (
     get_parsed_telemetry_history,
+    get_telemetry_anomaly_summary,
     get_telemetry_timestamps,
     initialize_database,
     save_telemetry_snapshot,
+    save_telemetry_anomaly,
 )
 
 
 class DeviceApiTests(unittest.TestCase):
+    def test_anomalies_are_counted_but_not_added_to_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "felicity.db"
+            initialize_database(db_path)
+            timestamp = datetime(2026, 8, 6, 0, 2, 41, tzinfo=timezone.utc)
+            save_telemetry_anomaly(
+                raw_data=[{"Type": 84, "GrCTPP": [[478, 438, 590]]}],
+                reason="incomplete_packet",
+                details={"invalid_sections": ["Home", "ACin", "Batt2"]},
+                db_path=db_path,
+                timestamp=timestamp,
+            )
+            summary = get_telemetry_anomaly_summary(
+                timestamp - timedelta(minutes=1),
+                timestamp + timedelta(minutes=1),
+                db_path,
+            )
+            coverage = get_telemetry_timestamps(
+                timestamp - timedelta(minutes=1),
+                timestamp + timedelta(minutes=1),
+                db_path,
+            )
+
+        self.assertEqual(summary["count"], 1)
+        self.assertEqual(summary["latest_reason"], "incomplete_packet")
+        self.assertEqual(coverage, [])
+
     def test_compact_history_omits_raw_packets(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "felicity.db"

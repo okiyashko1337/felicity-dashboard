@@ -53,9 +53,11 @@ typedef struct {
 typedef struct {
     float coverage_percent;
     int gap_count;
+    int anomaly_count;
     int longest_gap_seconds;
     char latest_start[40];
     char latest_end[40];
+    char latest_anomaly_timestamp[40];
     dashboard_chart_t chart;
 } dashboard_gaps_t;
 

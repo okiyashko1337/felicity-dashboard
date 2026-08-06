@@ -1060,17 +1060,19 @@ class NextionDashboard:
             )
 
     def render_gaps(self) -> None:
-        gaps = (self.gap_data or {}).get("gap_statistics", {})
-        gap_list = gaps.get("gaps", [])
-        latest = gap_list[-1] if gap_list else None
+        payload = self.gap_data or {}
+        gaps = payload.get("gap_statistics", {})
         self.transport.set_color("gaps", "tBack", 65519)
         self.transport.set_text("gaps", "tBack", "BACK")
         self.transport.set_text("gaps", "tTitle", "GAPS")
         self.transport.set_text("gaps", "tMain", f"{number(gaps.get('coverage_percent')):.1f}%")
         self.transport.set_text("gaps", "tA", f"GAPS  {round(number(gaps.get('gap_count')))}")
         self.transport.set_text("gaps", "tB", f"LONGEST  {format_duration(gaps.get('longest_gap_seconds'))}")
-        latest_text = "NO GAPS" if not latest else f"LAST  {datetime.fromisoformat(latest['start']).astimezone().strftime('%H:%M')} - {datetime.fromisoformat(latest['end']).astimezone().strftime('%H:%M')}"
-        self.transport.set_text("gaps", "tC", latest_text)
+        anomalies = payload.get("anomaly_statistics", {})
+        anomaly_count = round(number(anomalies.get("count")))
+        anomaly_time = anomalies.get("latest_timestamp")
+        anomaly_suffix = "" if not anomaly_time else f"  LAST {datetime.fromisoformat(anomaly_time).astimezone().strftime('%H:%M')}"
+        self.transport.set_text("gaps", "tC", f"ANOMALIES  {anomaly_count}{anomaly_suffix}")
         self.render_chart_axes("gaps")
 
     def render_gap_waveform(self) -> None:

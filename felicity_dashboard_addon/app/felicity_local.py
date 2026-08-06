@@ -35,6 +35,15 @@ class FelicityProtocolError(RuntimeError):
     """Raised when the local module returns an incomplete or unexpected reply."""
 
 
+class TelemetryAnomaly(FelicityProtocolError):
+    """Raised when a reply is valid JSON but not a trustworthy telemetry frame."""
+
+    def __init__(self, reason: str, details: dict[str, Any]) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.details = details
+
+
 def decode_json_stream(payload: str) -> list[dict[str, Any]]:
     """Decode concatenated JSON objects returned without separators."""
     decoder = json.JSONDecoder()
@@ -116,6 +125,37 @@ def _scaled_phase_values(data: Any, scale: float) -> dict[str, float]:
     }
 
 
+def _has_shape(value: Any, rows: dict[int, int]) -> bool:
+    if not isinstance(value, list):
+        return False
+    for row, minimum_length in rows.items():
+        if row >= len(value) or not isinstance(value[row], list):
+            return False
+        if len(value[row]) < minimum_length:
+            return False
+        if any(not isinstance(item, (int, float)) for item in value[row][:minimum_length]):
+            return False
+    return True
+
+
+def validate_realtime_packet(inverter: dict[str, Any]) -> None:
+    """Reject incomplete frames before missing values can become plausible zeroes."""
+    required = {
+        "Home": {0: 1, 1: 3},
+        "GrCTPP": {0: 3, 2: 1},
+        "ACin": {0: 3},
+        "Batt2": {0: 1, 1: 1, 2: 1},
+        "Batsoc2": {0: 1},
+        "PV": {0: 2, 1: 2, 2: 2},
+    }
+    invalid = [name for name, shape in required.items() if not _has_shape(inverter.get(name), shape)]
+    if invalid:
+        raise TelemetryAnomaly(
+            "incomplete_packet",
+            {"invalid_sections": invalid, "device_timestamp": inverter.get("date")},
+        )
+
+
 def _has_nonzero(value: Any) -> bool:
     if isinstance(value, (list, tuple)):
         return any(_has_nonzero(item) for item in value)
@@ -188,6 +228,7 @@ def parse_realtime_packets(packets: list[dict[str, Any]]) -> dict[str, Any]:
     inverter = next((packet for packet in packets if packet.get("Type") == 84), None)
     if inverter is None:
         raise FelicityProtocolError("Realtime response does not contain an inverter packet")
+    validate_realtime_packet(inverter)
 
     bms_packets = sorted(
         (packet for packet in packets if packet.get("Type") == 112),
@@ -274,6 +315,29 @@ def parse_realtime_packets(packets: list[dict[str, Any]]) -> dict[str, Any]:
         _array_value(inverter.get("ACout"), 4, default=[]), 1
     )
     warning_codes = _decode_warning_codes(inverter.get("warn", 0))
+
+    if all(value == 0 for value in grid_voltage.values()) and any(
+        abs(value) > 100 for value in grid_phases.values()
+    ):
+        raise TelemetryAnomaly(
+            "inconsistent_grid_telemetry",
+            {"grid_voltage_v": grid_voltage, "grid_power_w": grid_phases},
+        )
+
+    consistency_issues: list[str] = []
+    for name, total, phases in (
+        ("Home", home_total, home_phases),
+        ("GrCTPP", grid_total, grid_phases),
+    ):
+        phase_sum = sum(phases.values())
+        tolerance = max(300, abs(phase_sum) * 0.2)
+        if abs(total - phase_sum) > tolerance:
+            consistency_issues.append(name)
+    if consistency_issues:
+        raise TelemetryAnomaly(
+            "inconsistent_phase_total",
+            {"sections": consistency_issues},
+        )
 
     return {
         "source": "felicity_local_wifi",

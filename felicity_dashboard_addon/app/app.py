@@ -20,6 +20,7 @@ from database import (
     get_system_range,
     get_system_history,
     get_telemetry_timestamps,
+    get_telemetry_anomaly_summary,
     get_telemetry_history,
     get_telemetry_range,
     get_telemetry_range_sampled,
@@ -279,6 +280,7 @@ def device_gaps() -> dict:
     try:
         rows = get_telemetry_timestamps(start, now, DB_PATH)
         stats = build_gap_statistics(rows, range_start=start, range_end=now, now=now)
+        anomalies = get_telemetry_anomaly_summary(start, now, DB_PATH)
     except sqlite3.Error as error:
         raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
     latest = stats["gaps"][-1] if stats["gaps"] else None
@@ -288,6 +290,9 @@ def device_gaps() -> dict:
         "coverage_percent": stats["coverage_percent"],
         "gap_count": stats["gap_count"],
         "longest_gap_seconds": stats["longest_gap_seconds"],
+        "anomaly_count": anomalies["count"],
+        "latest_anomaly_timestamp": anomalies["latest_timestamp"],
+        "latest_anomaly_reason": anomalies["latest_reason"],
         "latest_start": latest["start"] if latest else None,
         "latest_end": latest["end"] if latest else None,
         "channels": 1,
@@ -350,6 +355,7 @@ def analytics(
             range_end=end,
             now=datetime.now(start.tzinfo),
         )
+        result["anomaly_statistics"] = get_telemetry_anomaly_summary(start, end, DB_PATH)
     except sqlite3.Error as error:
         raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
     return {
