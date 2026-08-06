@@ -9,8 +9,12 @@ endpoints and drives the existing NX4827P043 HMI at 115200 baud.
 - ESP32 GPIO4 (TX) -> Nextion RX
 - ESP32 GPIO5 (RX) <- Nextion TX
 - ESP32 GND <-> Nextion GND
-- Nextion +5V from its own USB-A 5V supply lead
-- ESP32 from a separate USB-C port; do not join the two +5V rails
+- Nextion +5V and ESP32 `5V` may share one regulated 5V supply rated for both
+  devices; connect all grounds together
+- when the ESP32 is powered through its `5V` pin, do not connect a normal
+  powered USB-C cable at the same time: Super Mini revisions differ in VBUS
+  isolation, so use a data-only USB cable or disconnect external +5V while
+  flashing
 
 ## Build for the board
 
