@@ -36,6 +36,7 @@ typedef struct {
     char ip[16];
     char gateway[16];
     char setup_ap[FELICITY_WIFI_SSID_MAX + 1];
+    bool setup_ap_active;
     int8_t rssi;
     uint8_t channel;
     float tx_power_dbm;
@@ -43,6 +44,9 @@ typedef struct {
 
 void wifi_manager_init(void);
 wifi_manager_state_t wifi_manager_state(void);
+bool wifi_manager_enable_setup_ap(void);
+void wifi_manager_disable_setup_ap(void);
+bool wifi_manager_setup_ap_active(void);
 
 bool wifi_manager_load_credentials(char *ssid, size_t ssid_size,
                                    char *password, size_t password_size);
