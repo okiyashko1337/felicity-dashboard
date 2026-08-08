@@ -475,9 +475,10 @@ void setup_ui_render_local_settings(const wifi_diagnostics_t *wifi,
     nextion_text(130, 67, 220, 18, 0, COLOR_TEXT, COLOR_PANEL, line);
     snprintf(line, sizeof(line), "IP  %s", wifi ? wifi->ip : "--");
     nextion_text(130, 86, 220, 18, 0, COLOR_TEXT, COLOR_PANEL, line);
-    snprintf(line, sizeof(line), "%d dBm  CH%u  TX%.1f",
+    snprintf(line, sizeof(line), "%d dBm  CH%u  TX%.1f  AP %s",
              wifi ? wifi->rssi : 0, wifi ? wifi->channel : 0,
-             wifi ? wifi->tx_power_dbm : 0.0f);
+             wifi ? wifi->tx_power_dbm : 0.0f,
+             wifi && wifi->setup_ap_active ? "ON" : "OFF");
     nextion_text(130, 104, 220, 18, 0, COLOR_MUTED, COLOR_PANEL, line);
     key(360, 57, 104, 54, "WI-FI", COLOR_ACCENT);
 

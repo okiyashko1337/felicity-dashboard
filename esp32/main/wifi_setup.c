@@ -59,6 +59,11 @@ static void exit_to_saved_wifi(void)
     esp_restart();
 }
 
+static void enable_setup_access(void)
+{
+    if (wifi_manager_enable_setup_ap()) wifi_portal_start();
+}
+
 void wifi_setup_run(char *api_url, size_t api_url_capacity)
 {
     char saved_ssid[FELICITY_WIFI_SSID_MAX + 1] = "";
@@ -81,7 +86,6 @@ void wifi_setup_run(char *api_url, size_t api_url_capacity)
         saved_ssid, sizeof(saved_ssid), saved_password, sizeof(saved_password));
     bool force_interactive_setup = wifi_manager_take_setup_request();
     wifi_manager_init();
-    wifi_portal_start();
     bool stored_credentials = wifi_manager_load_credentials(
         fallback_ssid, sizeof(fallback_ssid), fallback_password,
         sizeof(fallback_password));
@@ -101,6 +105,7 @@ void wifi_setup_run(char *api_url, size_t api_url_capacity)
     }
 
     if (force_interactive_setup) have_credentials = false;
+    if (!have_credentials) enable_setup_access();
     if (have_credentials) {
         snprintf(selected_ssid, sizeof(selected_ssid), "%s", saved_ssid);
         snprintf(password, sizeof(password), "%s", saved_password);
@@ -148,8 +153,15 @@ void wifi_setup_run(char *api_url, size_t api_url_capacity)
             screen = SCREEN_NETWORKS;
             message[0] = '\0';
         } else if (manager_state == WIFI_MANAGER_FAILED && screen == SCREEN_CONNECTING) {
+            enable_setup_access();
             int reason = wifi_manager_last_disconnect_reason();
             snprintf(message, sizeof(message), "FAILED (%d)", reason);
+            if (!interactive_connection) {
+                network_page = 0;
+                wifi_manager_start_scan();
+                render_scanning(can_exit);
+                screen = SCREEN_SCANNING;
+            }
         }
 
         touch_event_t touch;
@@ -295,6 +307,7 @@ void wifi_setup_run(char *api_url, size_t api_url_capacity)
                               can_exit);
         vTaskDelay(pdMS_TO_TICKS(1200));
     }
+    wifi_manager_disable_setup_ap();
     memset(password, 0, sizeof(password));
 
     char ha_host[FELICITY_HA_HOST_MAX];

@@ -15,6 +15,7 @@
 #include "wifi_manager.h"
 
 static const char *TAG = "wifi_portal";
+static httpd_handle_t portal_server;
 
 static const char SETUP_PAGE[] =
     "<!doctype html><meta name=viewport content='width=device-width'>"
@@ -169,16 +170,16 @@ static esp_err_t ha_post(httpd_req_t *request)
 
 void wifi_portal_start(void)
 {
+    if (portal_server) return;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    httpd_handle_t server = NULL;
-    ESP_ERROR_CHECK(httpd_start(&server, &config));
+    ESP_ERROR_CHECK(httpd_start(&portal_server, &config));
     httpd_uri_t root = {.uri = "/", .method = HTTP_GET, .handler = root_get};
     httpd_uri_t status = {.uri = "/status", .method = HTTP_GET, .handler = status_get};
     httpd_uri_t save = {.uri = "/save", .method = HTTP_POST, .handler = save_post};
     httpd_uri_t ha = {.uri = "/ha", .method = HTTP_POST, .handler = ha_post};
-    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &root));
-    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &status));
-    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &save));
-    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &ha));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(portal_server, &root));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(portal_server, &status));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(portal_server, &save));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(portal_server, &ha));
     ESP_LOGI(TAG, "Portal ready at http://192.168.4.1");
 }

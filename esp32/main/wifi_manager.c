@@ -37,6 +37,8 @@ static bool was_connected;
 static char pending_ssid[FELICITY_WIFI_SSID_MAX + 1];
 static char pending_password[FELICITY_WIFI_PASSWORD_MAX];
 static char setup_ap_ssid[FELICITY_WIFI_SSID_MAX + 1];
+static wifi_config_t setup_ap_config;
+static bool setup_ap_active;
 static esp_netif_t *station_netif;
 static char connection_log[FELICITY_WIFI_LOG_MAX_LINES][FELICITY_WIFI_LOG_LINE_MAX];
 static size_t connection_log_count;
@@ -229,7 +231,11 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             connect_started_at = esp_timer_get_time();
             esp_wifi_connect();
         } else if (state == WIFI_MANAGER_CONNECTING) {
-            state = WIFI_MANAGER_FAILED;
+            if (esp_timer_get_time() - connect_started_at < CONNECT_TIMEOUT_US) {
+                esp_wifi_connect();
+            } else {
+                state = WIFI_MANAGER_FAILED;
+            }
         }
         return;
     }
@@ -272,29 +278,65 @@ void wifi_manager_init(void)
 
     uint8_t ap_mac[6] = {0};
     ESP_ERROR_CHECK(esp_read_mac(ap_mac, ESP_MAC_WIFI_SOFTAP));
-    wifi_config_t ap_config = {0};
-    snprintf((char *)ap_config.ap.ssid, sizeof(ap_config.ap.ssid),
+    memset(&setup_ap_config, 0, sizeof(setup_ap_config));
+    snprintf((char *)setup_ap_config.ap.ssid, sizeof(setup_ap_config.ap.ssid),
              "%s-%02X%02X", SETUP_AP_PREFIX, ap_mac[4], ap_mac[5]);
     snprintf(setup_ap_ssid, sizeof(setup_ap_ssid), "%s",
-             (char *)ap_config.ap.ssid);
-    ap_config.ap.ssid_len = strlen((char *)ap_config.ap.ssid);
-    ap_config.ap.channel = 1;
-    ap_config.ap.authmode = WIFI_AUTH_OPEN;
-    ap_config.ap.max_connection = 4;
-    ap_config.ap.beacon_interval = 100;
+             (char *)setup_ap_config.ap.ssid);
+    setup_ap_config.ap.ssid_len = strlen((char *)setup_ap_config.ap.ssid);
+    setup_ap_config.ap.channel = 1;
+    setup_ap_config.ap.authmode = WIFI_AUTH_OPEN;
+    setup_ap_config.ap.max_connection = 4;
+    setup_ap_config.ap.beacon_interval = 100;
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(WIFI_TX_POWER_QDBM));
-    connection_log_append("SETUP AP: %s", ap_config.ap.ssid);
+    setup_ap_active = false;
+    connection_log_append("STATION MODE READY");
     connection_log_append("TX POWER: 8.5 dBm");
-    ESP_LOGI(TAG, "Setup AP '%s', Wi-Fi TX power 8.5 dBm", ap_config.ap.ssid);
+    ESP_LOGI(TAG, "Station mode ready; setup AP is off, Wi-Fi TX power 8.5 dBm");
 }
 
 wifi_manager_state_t wifi_manager_state(void)
 {
     return state;
+}
+
+bool wifi_manager_enable_setup_ap(void)
+{
+    if (setup_ap_active) return true;
+    esp_err_t result = esp_wifi_set_mode(WIFI_MODE_APSTA);
+    if (result == ESP_OK) {
+        result = esp_wifi_set_config(WIFI_IF_AP, &setup_ap_config);
+    }
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Cannot enable setup AP: %s", esp_err_to_name(result));
+        connection_log_append("SETUP AP ERROR: %s", esp_err_to_name(result));
+        return false;
+    }
+    setup_ap_active = true;
+    connection_log_append("SETUP AP: %s", setup_ap_ssid);
+    ESP_LOGI(TAG, "Setup AP '%s' enabled", setup_ap_ssid);
+    return true;
+}
+
+void wifi_manager_disable_setup_ap(void)
+{
+    if (!setup_ap_active) return;
+    esp_err_t result = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (result != ESP_OK) {
+        ESP_LOGW(TAG, "Cannot disable setup AP: %s", esp_err_to_name(result));
+        return;
+    }
+    setup_ap_active = false;
+    connection_log_append("SETUP AP OFF");
+    ESP_LOGI(TAG, "Setup AP disabled");
+}
+
+bool wifi_manager_setup_ap_active(void)
+{
+    return setup_ap_active;
 }
 
 bool wifi_manager_load_credentials(char *ssid, size_t ssid_size,
@@ -464,6 +506,7 @@ bool wifi_manager_get_diagnostics(wifi_diagnostics_t *diagnostics)
     memset(diagnostics, 0, sizeof(*diagnostics));
     diagnostics->state = state;
     diagnostics->tx_power_dbm = WIFI_TX_POWER_QDBM / 4.0f;
+    diagnostics->setup_ap_active = setup_ap_active;
     snprintf(diagnostics->setup_ap, sizeof(diagnostics->setup_ap), "%s",
              setup_ap_ssid);
     snprintf(diagnostics->ip, sizeof(diagnostics->ip), "--");
