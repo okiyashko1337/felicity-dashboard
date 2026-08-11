@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.12.0
+
+- Acknowledge every completed Felicity TCP reply before closing the session.
+- Stop holding completed module sessions open for the full initial read timeout.
+- Keep the normal two-second polling interval unchanged.
+- Back off failed requests exponentially up to one minute and recover automatically.
 - Reject incomplete or physically inconsistent inverter frames instead of storing synthetic zeroes.
 - Retain the latest 100 anomalous raw replies for incident diagnostics.
 - Show today's anomaly count and latest anomaly time on the full-screen gaps card.

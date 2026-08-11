@@ -1,15 +1,24 @@
 import json
+import socket
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from database import (
     get_latest_telemetry,
     initialize_database,
     save_telemetry_snapshot,
 )
-from felicity_local import TelemetryAnomaly, decode_json_stream, parse_realtime_packets
+from felicity_local import (
+    FELICITY_RESPONSE_ACK,
+    FelicityLocalClient,
+    FelicityProtocolError,
+    TelemetryAnomaly,
+    decode_json_stream,
+    parse_realtime_packets,
+)
 
 
 INVERTER_PACKET = {
@@ -57,7 +66,92 @@ BMS_PACKET_2 = {
 }
 
 
+class FakeConnection:
+    def __init__(self, replies: list[bytes | BaseException]) -> None:
+        self.replies = list(replies)
+        self.sent: list[bytes] = []
+        self.timeouts: list[float] = []
+        self.socket_options: list[tuple[int, int, int]] = []
+        self.shutdown_modes: list[int] = []
+        self.closed = False
+
+    def __enter__(self) -> "FakeConnection":
+        return self
+
+    def __exit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
+        self.closed = True
+
+    def settimeout(self, timeout: float) -> None:
+        self.timeouts.append(timeout)
+
+    def setsockopt(self, level: int, option: int, value: int) -> None:
+        self.socket_options.append((level, option, value))
+
+    def sendall(self, payload: bytes) -> None:
+        self.sent.append(payload)
+
+    def recv(self, _size: int) -> bytes:
+        if not self.replies:
+            raise socket.timeout()
+        reply = self.replies.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
+
+    def shutdown(self, mode: int) -> None:
+        self.shutdown_modes.append(mode)
+
+
 class FelicityLocalTests(unittest.TestCase):
+    def test_client_acknowledges_and_gracefully_closes_each_reply(self) -> None:
+        payload = "".join(
+            json.dumps(packet) for packet in [INVERTER_PACKET, BMS_PACKET_1]
+        ).encode()
+        connection = FakeConnection([payload[:100], payload[100:], socket.timeout()])
+        client = FelicityLocalClient(
+            host="192.0.2.10",
+            read_timeout=1.5,
+            inter_chunk_timeout=0.4,
+        )
+
+        with patch("felicity_local.socket.create_connection", return_value=connection):
+            packets = client.request()
+
+        self.assertEqual(len(packets), 2)
+        self.assertEqual(
+            connection.sent,
+            [b"wifilocalMonitor:get dev real infor", FELICITY_RESPONSE_ACK],
+        )
+        self.assertEqual(connection.timeouts, [1.5, 0.4, 0.4])
+        self.assertEqual(connection.shutdown_modes, [socket.SHUT_WR])
+        self.assertTrue(connection.closed)
+
+    def test_client_does_not_acknowledge_an_empty_timeout(self) -> None:
+        connection = FakeConnection([socket.timeout()])
+        client = FelicityLocalClient(host="192.0.2.10")
+
+        with patch("felicity_local.socket.create_connection", return_value=connection):
+            with self.assertRaisesRegex(FelicityProtocolError, "empty response"):
+                client.request()
+
+        self.assertEqual(
+            connection.sent,
+            [b"wifilocalMonitor:get dev real infor"],
+        )
+        self.assertEqual(connection.shutdown_modes, [])
+        self.assertTrue(connection.closed)
+
+    def test_client_bounds_a_runaway_response_and_still_acks_it(self) -> None:
+        connection = FakeConnection([b"x" * 33])
+        client = FelicityLocalClient(host="192.0.2.10", max_response_bytes=32)
+
+        with patch("felicity_local.socket.create_connection", return_value=connection):
+            with self.assertRaisesRegex(FelicityProtocolError, "safe size limit"):
+                client.request()
+
+        self.assertEqual(connection.sent[-1], FELICITY_RESPONSE_ACK)
+        self.assertTrue(connection.closed)
+
     def test_decodes_concatenated_json_objects(self) -> None:
         payload = "".join(
             json.dumps(packet) for packet in [INVERTER_PACKET, BMS_PACKET_1, BMS_PACKET_2]
