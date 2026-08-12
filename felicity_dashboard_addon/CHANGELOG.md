@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.12.1
+
+- Revert the TCP acknowledgement and shortened inter-packet timeout from 0.12.0.
+- Restore the proven 0.11.1 request lifecycle while keeping two-second polling.
+
 ## 0.12.0
 
 - Acknowledge every completed Felicity TCP reply before closing the session.

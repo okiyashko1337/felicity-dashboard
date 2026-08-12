@@ -12,8 +12,6 @@ from config import (
     FELICITY_COMMAND,
     FELICITY_CONNECT_TIMEOUT_SECONDS,
     FELICITY_HOST,
-    FELICITY_INTER_CHUNK_TIMEOUT_SECONDS,
-    FELICITY_MAX_RESPONSE_BYTES,
     FELICITY_PORT,
     FELICITY_READ_TIMEOUT_SECONDS,
 )
@@ -31,8 +29,6 @@ INVERTER_WARNING_MESSAGES = {
     24: "обратное направление внешнего датчика CT",
     26: "несовпадение версий ПО и оборудования",
 }
-
-FELICITY_RESPONSE_ACK = b"."
 
 
 class FelicityProtocolError(RuntimeError):
@@ -83,68 +79,28 @@ class FelicityLocalClient:
     port: int = FELICITY_PORT
     connect_timeout: float = FELICITY_CONNECT_TIMEOUT_SECONDS
     read_timeout: float = FELICITY_READ_TIMEOUT_SECONDS
-    inter_chunk_timeout: float = FELICITY_INTER_CHUNK_TIMEOUT_SECONDS
-    max_response_bytes: int = FELICITY_MAX_RESPONSE_BYTES
 
     def request(self, command: str = FELICITY_COMMAND) -> list[dict[str, Any]]:
         """Send one read-only local-monitor request and return all JSON packets."""
-        response = bytearray()
+        chunks: list[bytes] = []
         with socket.create_connection(
             (self.host, self.port), timeout=self.connect_timeout
         ) as connection:
-            try:
-                connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            except OSError:
-                # Some socket substitutes and unusual platforms do not expose it.
-                pass
+            connection.settimeout(self.read_timeout)
+            connection.sendall(command.encode("ascii"))
 
-            try:
-                connection.settimeout(self.read_timeout)
-                connection.sendall(command.encode("ascii"))
+            while True:
+                try:
+                    chunk = connection.recv(65536)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                chunks.append(chunk)
 
-                while True:
-                    try:
-                        chunk = connection.recv(65536)
-                    except socket.timeout:
-                        break
-                    if not chunk:
-                        break
-
-                    response.extend(chunk)
-                    if len(response) > self.max_response_bytes:
-                        raise FelicityProtocolError(
-                            "Felicity response exceeded the safe size limit"
-                        )
-
-                    # All packets normally arrive back-to-back. After the first
-                    # byte, wait only for the next packet rather than holding a
-                    # firmware session open for the entire initial timeout.
-                    connection.settimeout(self.inter_chunk_timeout)
-            finally:
-                if response:
-                    self._finish_session(connection)
-
-        if not response:
+        if not chunks:
             raise FelicityProtocolError("Felicity module returned an empty response")
-        try:
-            payload = response.decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise FelicityProtocolError("Felicity module returned invalid UTF-8") from error
-        return decode_json_stream(payload)
-
-    @staticmethod
-    def _finish_session(connection: socket.socket) -> None:
-        """Acknowledge the reply and close the module session gracefully."""
-        try:
-            connection.sendall(FELICITY_RESPONSE_ACK)
-        except OSError:
-            # A module is allowed to close immediately after its response.
-            return
-
-        try:
-            connection.shutdown(socket.SHUT_WR)
-        except OSError:
-            pass
+        return decode_json_stream(b"".join(chunks).decode("utf-8"))
 
 
 def _number(value: Any, default: float = 0.0) -> float:
