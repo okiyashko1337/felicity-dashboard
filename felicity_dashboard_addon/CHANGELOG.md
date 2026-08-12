@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.13.1
+
+- Default to two expected BMS packets when upgrading an existing Home Assistant installation whose saved options do not contain the new field yet.
+
 ## 0.13.0
 
 - Poll the inverter no more often than once every five seconds.
