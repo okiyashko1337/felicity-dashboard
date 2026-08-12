@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.13.0
+
+- Poll the inverter no more often than once every five seconds.
+- Wait for the inverter packet and both configured BMS packets before accepting a response.
+- Acknowledge only a structurally complete response, then half-close and drain the TCP session.
+
 ## 0.12.1
 
 - Revert the TCP acknowledgement and shortened inter-packet timeout from 0.12.0.

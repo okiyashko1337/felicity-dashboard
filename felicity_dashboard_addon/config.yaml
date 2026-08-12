@@ -1,5 +1,5 @@
 name: Felicity Energy Dashboard
-version: "0.12.1"
+version: "0.13.0"
 slug: felicity_energy_dashboard
 description: Local Felicity IVGM monitoring with history and Raspberry Pi metrics
 url: https://github.com/okiyashko1337/felicity-dashboard
@@ -23,7 +23,8 @@ backup: cold
 options:
   inverter_host: 192.168.1.135
   inverter_port: 53970
-  poll_interval: 2
+  poll_interval: 5
+  expected_bms_packets: 2
   system_interval: 10
   nextion_enabled: false
   nextion_port: ""
@@ -32,6 +33,7 @@ schema:
   inverter_host: str
   inverter_port: int
   poll_interval: float
+  expected_bms_packets: int(0,10)
   system_interval: int
   nextion_enabled: bool
   nextion_port: str

@@ -10,7 +10,7 @@
 
 ```text
 Felicity Wi-Fi module (TCP 53970)
-               │ read-only запрос каждые 2 секунды
+               │ read-only запрос каждые 5 секунд
                ▼
         collector.py + parser
                │ текущие данные + компактная история раз в 2 минуты
