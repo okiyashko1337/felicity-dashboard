@@ -13,6 +13,9 @@ inverter_host=$(bashio::config 'inverter_host')
 inverter_port=$(bashio::config 'inverter_port')
 poll_interval=$(bashio::config 'poll_interval')
 expected_bms_packets=$(bashio::config 'expected_bms_packets')
+if [[ -z "${expected_bms_packets}" || "${expected_bms_packets}" == "null" ]]; then
+    expected_bms_packets=2
+fi
 system_interval=$(bashio::config 'system_interval')
 nextion_enabled=$(bashio::config 'nextion_enabled')
 nextion_port=$(bashio::config 'nextion_port')
