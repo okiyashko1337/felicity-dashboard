@@ -11,10 +11,16 @@ from typing import Any
 from config import (
     FELICITY_COMMAND,
     FELICITY_CONNECT_TIMEOUT_SECONDS,
+    FELICITY_EXPECTED_BMS_PACKETS,
     FELICITY_HOST,
+    FELICITY_MAX_RESPONSE_BYTES,
     FELICITY_PORT,
     FELICITY_READ_TIMEOUT_SECONDS,
 )
+
+
+FELICITY_RESPONSE_ACK = b"."
+FELICITY_CLOSE_TIMEOUT_SECONDS = 0.25
 
 
 INVERTER_WARNING_MESSAGES = {
@@ -79,10 +85,13 @@ class FelicityLocalClient:
     port: int = FELICITY_PORT
     connect_timeout: float = FELICITY_CONNECT_TIMEOUT_SECONDS
     read_timeout: float = FELICITY_READ_TIMEOUT_SECONDS
+    expected_bms_packets: int = FELICITY_EXPECTED_BMS_PACKETS
+    max_response_bytes: int = FELICITY_MAX_RESPONSE_BYTES
 
     def request(self, command: str = FELICITY_COMMAND) -> list[dict[str, Any]]:
         """Send one read-only local-monitor request and return all JSON packets."""
-        chunks: list[bytes] = []
+        response = bytearray()
+        complete_packets: list[dict[str, Any]] | None = None
         with socket.create_connection(
             (self.host, self.port), timeout=self.connect_timeout
         ) as connection:
@@ -96,11 +105,94 @@ class FelicityLocalClient:
                     break
                 if not chunk:
                     break
-                chunks.append(chunk)
+                response.extend(chunk)
+                if len(response) > self.max_response_bytes:
+                    raise FelicityProtocolError(
+                        "Felicity response exceeded the safe size limit"
+                    )
 
-        if not chunks:
-            raise FelicityProtocolError("Felicity module returned an empty response")
-        return decode_json_stream(b"".join(chunks).decode("utf-8"))
+                if command == FELICITY_COMMAND:
+                    complete_packets = _try_complete_realtime_response(
+                        response,
+                        self.expected_bms_packets,
+                    )
+                    if complete_packets is not None:
+                        break
+
+            if not response:
+                raise FelicityProtocolError("Felicity module returned an empty response")
+
+            if complete_packets is None:
+                try:
+                    packets = decode_json_stream(response.decode("utf-8"))
+                except UnicodeDecodeError as error:
+                    raise FelicityProtocolError(
+                        "Felicity module returned invalid UTF-8"
+                    ) from error
+                if command == FELICITY_COMMAND:
+                    _validate_complete_realtime_response(
+                        packets,
+                        self.expected_bms_packets,
+                    )
+            else:
+                packets = complete_packets
+
+            # Only a decoded inverter+BMS response is acknowledged as complete.
+            # An empty, truncated or partial response is closed without an ACK.
+            if command == FELICITY_COMMAND:
+                self._finish_complete_session(connection)
+
+        return packets
+
+    @staticmethod
+    def _finish_complete_session(connection: socket.socket) -> None:
+        """Acknowledge one complete reply, half-close, then drain peer shutdown."""
+        try:
+            connection.sendall(FELICITY_RESPONSE_ACK)
+        except OSError:
+            return
+
+        try:
+            connection.shutdown(socket.SHUT_WR)
+        except OSError:
+            return
+
+        try:
+            connection.settimeout(FELICITY_CLOSE_TIMEOUT_SECONDS)
+            while connection.recv(4096):
+                pass
+        except (OSError, socket.timeout):
+            pass
+
+
+def _validate_complete_realtime_response(
+    packets: list[dict[str, Any]],
+    expected_bms_packets: int,
+) -> None:
+    inverter_count = sum(packet.get("Type") == 84 for packet in packets)
+    bms_addresses = {
+        packet.get("ModAddr")
+        for packet in packets
+        if packet.get("Type") == 112 and packet.get("ModAddr") is not None
+    }
+    if inverter_count < 1 or len(bms_addresses) < expected_bms_packets:
+        raise FelicityProtocolError(
+            "Incomplete realtime response: "
+            f"inverter packets={inverter_count}, "
+            f"BMS packets={len(bms_addresses)}/{expected_bms_packets}"
+        )
+
+
+def _try_complete_realtime_response(
+    response: bytes | bytearray,
+    expected_bms_packets: int,
+) -> list[dict[str, Any]] | None:
+    try:
+        packets = decode_json_stream(bytes(response).decode("utf-8"))
+        _validate_complete_realtime_response(packets, expected_bms_packets)
+    except (UnicodeDecodeError, FelicityProtocolError):
+        return None
+    return packets
 
 
 def _number(value: Any, default: float = 0.0) -> float:

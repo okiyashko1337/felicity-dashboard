@@ -12,6 +12,7 @@ from database import (
     save_telemetry_snapshot,
 )
 from felicity_local import (
+    FELICITY_RESPONSE_ACK,
     FelicityLocalClient,
     FelicityProtocolError,
     TelemetryAnomaly,
@@ -70,6 +71,7 @@ class FakeConnection:
         self.replies = list(replies)
         self.sent: list[bytes] = []
         self.timeouts: list[float] = []
+        self.shutdown_modes: list[int] = []
         self.closed = False
 
     def __enter__(self) -> "FakeConnection":
@@ -92,12 +94,16 @@ class FakeConnection:
             raise reply
         return reply
 
+    def shutdown(self, mode: int) -> None:
+        self.shutdown_modes.append(mode)
+
 class FelicityLocalTests(unittest.TestCase):
-    def test_client_waits_for_all_chunks_without_sending_ack(self) -> None:
+    def test_client_waits_for_inverter_and_both_bms_packets_then_closes(self) -> None:
         payload = "".join(
-            json.dumps(packet) for packet in [INVERTER_PACKET, BMS_PACKET_1]
+            json.dumps(packet)
+            for packet in [INVERTER_PACKET, BMS_PACKET_1, BMS_PACKET_2]
         ).encode()
-        connection = FakeConnection([payload[:100], payload[100:], socket.timeout()])
+        connection = FakeConnection([payload[:100], payload[100:300], payload[300:]])
         client = FelicityLocalClient(
             host="192.0.2.10",
             read_timeout=1.5,
@@ -106,9 +112,34 @@ class FelicityLocalTests(unittest.TestCase):
         with patch("felicity_local.socket.create_connection", return_value=connection):
             packets = client.request()
 
-        self.assertEqual(len(packets), 2)
-        self.assertEqual(connection.sent, [b"wifilocalMonitor:get dev real infor"])
-        self.assertEqual(connection.timeouts, [1.5])
+        self.assertEqual(len(packets), 3)
+        self.assertEqual(
+            connection.sent,
+            [b"wifilocalMonitor:get dev real infor", FELICITY_RESPONSE_ACK],
+        )
+        self.assertEqual(connection.timeouts, [1.5, 0.25])
+        self.assertEqual(connection.shutdown_modes, [socket.SHUT_WR])
+        self.assertTrue(connection.closed)
+
+    def test_client_does_not_acknowledge_a_partial_realtime_response(self) -> None:
+        payload = "".join(
+            json.dumps(packet) for packet in [INVERTER_PACKET, BMS_PACKET_1]
+        ).encode()
+        connection = FakeConnection([payload, socket.timeout()])
+        client = FelicityLocalClient(host="192.0.2.10", expected_bms_packets=2)
+
+        with patch("felicity_local.socket.create_connection", return_value=connection):
+            with self.assertRaisesRegex(
+                FelicityProtocolError,
+                "BMS packets=1/2",
+            ):
+                client.request()
+
+        self.assertEqual(
+            connection.sent,
+            [b"wifilocalMonitor:get dev real infor"],
+        )
+        self.assertEqual(connection.shutdown_modes, [])
         self.assertTrue(connection.closed)
 
     def test_client_rejects_an_empty_timeout(self) -> None:
@@ -123,6 +154,7 @@ class FelicityLocalTests(unittest.TestCase):
             connection.sent,
             [b"wifilocalMonitor:get dev real infor"],
         )
+        self.assertEqual(connection.shutdown_modes, [])
         self.assertTrue(connection.closed)
 
     def test_decodes_concatenated_json_objects(self) -> None:

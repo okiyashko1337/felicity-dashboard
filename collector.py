@@ -9,7 +9,13 @@ import sqlite3
 import time
 from pathlib import Path
 
-from config import DB_PATH, FELICITY_HOST, FELICITY_PORT, POLL_INTERVAL_SECONDS
+from config import (
+    DB_PATH,
+    FELICITY_HOST,
+    FELICITY_PORT,
+    MIN_POLL_INTERVAL_SECONDS,
+    POLL_INTERVAL_SECONDS,
+)
 from database import initialize_database, save_telemetry_anomaly, save_telemetry_snapshot
 from felicity_local import (
     FelicityLocalClient,
@@ -45,12 +51,19 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     initialize_database(args.db)
     client = FelicityLocalClient(host=args.host, port=args.port)
+    interval = max(MIN_POLL_INTERVAL_SECONDS, args.interval)
+    if interval != args.interval:
+        logger.warning(
+            "Requested %.1f-second polling is too frequent; using %.1f seconds",
+            args.interval,
+            interval,
+        )
 
     logger.info(
         "Local collector started: %s:%s every %.1f seconds",
         args.host,
         args.port,
-        args.interval,
+        interval,
     )
     next_status_log = 0.0
 
@@ -99,7 +112,7 @@ def main() -> int:
             logger.error("Telemetry database temporarily unavailable: %s", error)
 
         elapsed = time.monotonic() - cycle_started
-        time.sleep(max(0, args.interval - elapsed))
+        time.sleep(max(0, interval - elapsed))
 
     logger.info("Local collector stopped")
     return 0
