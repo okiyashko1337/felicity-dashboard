@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from config import DB_PATH, HISTORY_INTERVAL_SECONDS
 from analytics import build_energy_analytics, build_gap_statistics, build_period_analytics
@@ -29,6 +29,7 @@ from database import (
     ensure_energy_daily,
     initialize_database,
 )
+from device_update import DeviceUpdateStore
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 APP_VERSION = os.environ.get("FELICITY_APP_VERSION", "dev")
@@ -48,6 +49,12 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Felicity Energy Dashboard API", lifespan=lifespan)
+FIRMWARE_DIR = Path(__file__).resolve().parent / "firmware"
+DEVICE_UPDATE_STORE = DeviceUpdateStore(
+    FIRMWARE_DIR,
+    Path(os.getenv("FELICITY_DEVICE_UPDATE_STATE", Path(DB_PATH).parent / "device-update.json")),
+    APP_VERSION,
+)
 
 
 @app.get("/", include_in_schema=False)
@@ -82,9 +89,70 @@ def device_current() -> dict:
     return {
         "id": snapshot["id"],
         "timestamp": snapshot["timestamp"],
+        "server_time": datetime.now(timezone.utc).isoformat(),
         "source": snapshot["source"],
         "parsed": snapshot["parsed"],
     }
+
+
+@app.get("/api/device/update")
+def device_update() -> dict:
+    return DEVICE_UPDATE_STORE.snapshot()
+
+
+@app.post("/api/device/update/request/{target}", status_code=202)
+def request_device_update(target: str) -> dict:
+    try:
+        return DEVICE_UPDATE_STORE.request(target)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/device/update/cancel")
+def cancel_device_update() -> dict:
+    try:
+        return DEVICE_UPDATE_STORE.cancel()
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/device/update/report")
+def report_device_update(report: dict) -> dict:
+    try:
+        return DEVICE_UPDATE_STORE.report(report)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/device/update/confirm")
+def confirm_device_update(report: dict) -> dict:
+    version = str(report.get("device_version", ""))
+    if not version:
+        raise HTTPException(status_code=400, detail="Missing device_version")
+    try:
+        return DEVICE_UPDATE_STORE.confirm_running(version)
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/api/device/firmware/{target}", include_in_schema=False)
+def device_firmware(target: str) -> FileResponse:
+    path_target = {"esp32.bin": "esp32", "nextion.tft": "nextion"}.get(target)
+    if path_target is None:
+        raise HTTPException(status_code=404, detail="Unknown device firmware")
+    path = DEVICE_UPDATE_STORE.firmware_path(path_target)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Device firmware is not bundled")
+    return FileResponse(path, media_type="application/octet-stream", headers={
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 def _device_summary_payload(system_snapshot: dict | None, analytics: dict) -> dict:

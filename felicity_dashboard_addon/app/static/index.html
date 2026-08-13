@@ -241,6 +241,25 @@
         </article>
       </div>
     </section>
+
+    <section class="panel mt-5 rounded-3xl p-5 sm:p-6" aria-labelledby="device-update-title">
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[.2em] text-cyan-400">ESP‑Nextion</p>
+          <h2 id="device-update-title" class="mt-1 text-xl font-semibold text-white">Обновление экрана по Wi‑Fi</h2>
+          <p id="device-update-status" class="mt-2 text-sm text-slate-500">Проверка доступных образов…</p>
+          <div class="mt-3 h-1.5 max-w-xl overflow-hidden rounded-full bg-white/5" aria-hidden="true">
+            <div id="device-update-progress" class="h-full w-0 rounded-full bg-cyan-400 transition-[width] duration-300"></div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button id="update-esp32" class="rounded-xl bg-cyan-400/15 px-4 py-2.5 text-sm font-medium text-cyan-200">Обновить ESP32</button>
+          <button id="update-nextion" class="rounded-xl bg-amber-300/15 px-4 py-2.5 text-sm font-medium text-amber-200">Обновить Nextion</button>
+          <button id="cancel-device-update" class="hidden rounded-xl border border-white/10 px-4 py-2.5 text-sm text-slate-300">Отменить ожидание</button>
+        </div>
+      </div>
+      <p class="mt-4 text-xs leading-5 text-slate-600">ESP32 проверяет SHA‑256 перед переключением OTA‑ячейки. Файл Nextion сначала полностью сохраняется и проверяется на ESP32, затем сверяется модель дисплея и только после этого передаётся по UART. Во время прошивки Nextion питание отключать нельзя.</p>
+    </section>
   </main>
 
   <script>
@@ -272,7 +291,8 @@
       connectionError: null,
       hiddenSeries: loadHiddenSeries(),
       detailGapThresholdMs: 10000,
-      detailGapStatistics: null
+      detailGapStatistics: null,
+      deviceUpdateBusy: false
     };
 
     const apiUrl = (path) => new URL(path, window.location.href).toString();
@@ -919,6 +939,64 @@
       }
     }
 
+    function drawDeviceUpdate(payload) {
+      const request = payload.request;
+      const status = payload.status || {};
+      const firmware = payload.firmware || {};
+      const active = Boolean(request);
+      const progress = Math.max(0, Math.min(100, Number(status.progress_percent) || 0));
+      const labels = {
+        idle: "Готово к обновлению",
+        queued: "Запрос поставлен в очередь; ESP32 заберёт его по Wi‑Fi",
+        downloading: "ESP32 загружает и проверяет файл",
+        installing: "Идёт установка — не отключайте питание",
+        restarting: "ESP32 перезапускается и подтверждает новую OTA‑ячейку",
+        complete: "Обновление успешно завершено",
+        error: "Обновление завершилось ошибкой",
+        cancelled: "Запрос обновления отменён"
+      };
+      const target = (status.target || request?.target) === "nextion" ? "Nextion" : "ESP32";
+      const message = status.message ? ` · ${status.message}` : "";
+      $("device-update-status").textContent = `${active || status.target ? `${target}: ` : ""}${labels[status.state] || labels.idle}${message}`;
+      $("device-update-progress").style.width = `${progress}%`;
+      $("update-esp32").disabled = active || state.deviceUpdateBusy || !firmware.esp32?.available;
+      $("update-nextion").disabled = active || state.deviceUpdateBusy || !firmware.nextion?.available;
+      $("cancel-device-update").classList.toggle("hidden", !active || status.state !== "queued");
+    }
+
+    async function refreshDeviceUpdate() {
+      try {
+        const response = await fetch(apiUrl("api/device/update"), { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        drawDeviceUpdate(await response.json());
+      } catch (error) {
+        $("device-update-status").textContent = `Не удалось получить статус обновления: ${error.message}`;
+      }
+    }
+
+    async function requestDeviceUpdate(target) {
+      const name = target === "nextion" ? "Nextion" : "ESP32";
+      const warning = target === "nextion" ? " Питание экрана нельзя отключать до завершения." : "";
+      if (!window.confirm(`Запустить обновление ${name} по Wi‑Fi?${warning}`)) return;
+      state.deviceUpdateBusy = true;
+      try {
+        const response = await fetch(apiUrl(`api/device/update/request/${target}`), { method: "POST" });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+        drawDeviceUpdate(payload);
+      } catch (error) {
+        window.alert(`Обновление не запущено: ${error.message}`);
+      } finally {
+        state.deviceUpdateBusy = false;
+        refreshDeviceUpdate();
+      }
+    }
+
+    async function cancelDeviceUpdate() {
+      await fetch(apiUrl("api/device/update/cancel"), { method: "POST" });
+      refreshDeviceUpdate();
+    }
+
     document.querySelectorAll(".summary-card").forEach((button) => button.addEventListener("click", () => selectPanel(button.dataset.panel)));
     document.querySelectorAll("[data-detail-scale]").forEach((button) => button.addEventListener("click", () => {
       state.detailScale = button.dataset.detailScale;
@@ -937,16 +1015,20 @@
     $("previous-period").addEventListener("click", () => shiftPeriod(-1));
     $("next-period").addEventListener("click", () => shiftPeriod(1));
     $("current-period").addEventListener("click", () => { state.anchor = new Date(); updatePeriodControls(); loadHistoryAnalytics(); });
+    $("update-esp32").addEventListener("click", () => requestDeviceUpdate("esp32"));
+    $("update-nextion").addEventListener("click", () => requestDeviceUpdate("nextion"));
+    $("cancel-device-update").addEventListener("click", cancelDeviceUpdate);
 
     async function start() {
       updatePeriodControls();
       updateFreshness();
       drawDetail(true);
       await Promise.allSettled([loadDetailRange(), loadHistoryAnalytics()]);
-      await Promise.allSettled([refreshCurrent(), refreshSystem()]);
+      await Promise.allSettled([refreshCurrent(), refreshSystem(), refreshDeviceUpdate()]);
       setInterval(refreshCurrent, 2000);
       setInterval(updateFreshness, 1000);
       setInterval(refreshSystem, 60000);
+      setInterval(refreshDeviceUpdate, 5000);
       setInterval(() => { if (state.period === "day" && localDate(state.anchor) === localDate()) loadHistoryAnalytics(); }, 60000);
     }
     start();

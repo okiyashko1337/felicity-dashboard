@@ -3,46 +3,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
-
 #include "cJSON.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "clock_sync.h"
 
 static const char *TAG = "dashboard_api";
-
-static int64_t days_from_civil(int year, unsigned month, unsigned day)
-{
-    year -= month <= 2;
-    int era = (year >= 0 ? year : year - 399) / 400;
-    unsigned yoe = (unsigned)(year - era * 400);
-    unsigned shifted_month = (unsigned)((int)month + (month > 2 ? -3 : 9));
-    unsigned doy = (153 * shifted_month + 2) / 5 + day - 1;
-    unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    return (int64_t)era * 146097 + (int64_t)doe - 719468;
-}
-
-static void sync_clock_from_iso8601(const char *timestamp)
-{
-    int year, month, day, hour, minute, second;
-    if (!timestamp || sscanf(timestamp, "%d-%d-%dT%d:%d:%d", &year, &month,
-                             &day, &hour, &minute, &second) != 6) return;
-    int64_t epoch = days_from_civil(year, (unsigned)month, (unsigned)day) * 86400 +
-                    hour * 3600 + minute * 60 + second;
-    const char *zone = timestamp + 19;
-    while (*zone && *zone != '+' && *zone != '-') ++zone;
-    if (*zone == '+' || *zone == '-') {
-        int offset_hour = 0, offset_minute = 0;
-        if (sscanf(zone + 1, "%d:%d", &offset_hour, &offset_minute) == 2) {
-            int offset = offset_hour * 3600 + offset_minute * 60;
-            epoch += *zone == '-' ? offset : -offset;
-        }
-    }
-    if (epoch > 1700000000) {
-        struct timeval value = {.tv_sec = (time_t)epoch, .tv_usec = 0};
-        settimeofday(&value, NULL);
-    }
-}
 
 typedef struct {
     char *data;
@@ -144,10 +110,17 @@ bool dashboard_parse_current(const char *json, dashboard_snapshot_t *s)
     s->grid_power_w = json_number(parsed, "grid_power_w", "total");
     s->grid_frequency_hz = json_number(parsed, NULL, "grid_frequency_hz");
 
+    cJSON *server_time = cJSON_GetObjectItemCaseSensitive(document, "server_time");
     cJSON *timestamp = cJSON_GetObjectItemCaseSensitive(document, "timestamp");
     if (cJSON_IsString(timestamp)) {
         snprintf(s->timestamp, sizeof(s->timestamp), "%s", timestamp->valuestring);
-        sync_clock_from_iso8601(timestamp->valuestring);
+    }
+    if (cJSON_IsString(server_time)) {
+        clock_sync_from_iso8601_once(server_time->valuestring);
+    } else if (cJSON_IsString(timestamp)) {
+        /* Compatibility with an older Home Assistant app. This is applied
+         * once only: repeated telemetry timestamps must never rewind time. */
+        clock_sync_from_iso8601_once(timestamp->valuestring);
     }
     cJSON_Delete(document);
     return true;

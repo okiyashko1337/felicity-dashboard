@@ -26,6 +26,7 @@ export FELICITY_PORT="${inverter_port}"
 export FELICITY_POLL_INTERVAL_SECONDS="${poll_interval}"
 export FELICITY_EXPECTED_BMS_PACKETS="${expected_bms_packets}"
 export FELICITY_DB_PATH="/data/felicity.db"
+export FELICITY_DEVICE_UPDATE_STATE="/data/device-update.json"
 export PYTHONUNBUFFERED="1"
 
 bashio::log.info "Starting Felicity collector for ${inverter_host}:${inverter_port}"

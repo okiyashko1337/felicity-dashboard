@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 
 #include "dashboard_data.h"
+#include "device_update.h"
 #include "device_settings.h"
 #include "nextion.h"
 #include "setup_ui.h"
@@ -45,6 +46,7 @@ void app_main(void)
         nvs_result = nvs_flash_init();
     }
     ESP_ERROR_CHECK(nvs_result);
+    bool pending_ota = device_update_running_app_pending();
     device_time_settings_t startup_time_settings;
     device_settings_load_time(&startup_time_settings);
     device_settings_apply_time(&startup_time_settings);
@@ -73,6 +75,9 @@ void app_main(void)
 #else
     wifi_setup_run(api_base_url, sizeof(api_base_url));
     ESP_LOGI(TAG, "Wi-Fi connected; dashboard API: %s", api_base_url);
+    /* NVS, Nextion UART and Wi-Fi have now all passed their boot diagnostics.
+     * Confirm only here so a broken OTA image is eligible for rollback. */
+    if (pending_ota) device_update_confirm_running_app();
     current_live = api_base_url[0] &&
                    dashboard_fetch_current(api_base_url, &snapshot);
     if (!current_live) {
@@ -84,6 +89,7 @@ void app_main(void)
     }
     snprintf(current_status, sizeof(current_status), "%s",
              current_live ? "HA DATA OK" : "HA REQUEST FAILED");
+    if (api_base_url[0]) device_update_confirm_with_server(api_base_url);
     if (api_base_url[0]) {
         dashboard_fetch_app_version(api_base_url, ha_app_version,
                                     sizeof(ha_app_version));
@@ -102,12 +108,27 @@ void app_main(void)
     TickType_t next_summary = 0;
     TickType_t next_chart = 0;
     TickType_t next_clock = 0;
+    TickType_t next_update = 0;
     bool summary_live = false;
 #if CONFIG_FELICITY_EMULATOR
     TickType_t next_demo_page = pdMS_TO_TICKS(5000);
 #endif
     while (true) {
         TickType_t now = xTaskGetTickCount();
+        if (now >= next_update) {
+#if !CONFIG_FELICITY_EMULATOR
+            device_update_request_t update = {0};
+            if (device_update_poll(api_base_url, &update)) {
+                ESP_LOGI(TAG, "Applying %s update %s",
+                         update.target == DEVICE_UPDATE_ESP32 ? "ESP32" : "Nextion",
+                         update.version);
+                device_update_apply(api_base_url, &update);
+                nextion_command("page home");
+                nextion_render_home(&snapshot, &summary, current_live);
+            }
+#endif
+            next_update = now + pdMS_TO_TICKS(15000);
+        }
         if (now >= next_clock) {
             if (page == DASH_PAGE_SETUP && local_setup_page == 1) {
                 setup_ui_render_time_value();

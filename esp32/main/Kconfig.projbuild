@@ -33,4 +33,12 @@ config FELICITY_NEXTION_BAUD
     int "Nextion UART baud rate"
     default 115200
 
+config FELICITY_NEXTION_MODEL
+    string "Expected Nextion model identifier"
+    default "NX4827P043_011C-Y"
+    help
+        The controller refuses a wireless TFT update unless the model in the
+        Nextion connect response matches exactly. This prevents an image for a
+        different display from being installed accidentally.
+
 endmenu
