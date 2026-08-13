@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+#include "nextion_protocol.h"
 
 #if CONFIG_FELICITY_EMULATOR
 static const char *TAG = "nextion";
@@ -83,6 +84,104 @@ void nextion_init(void)
     nextion_command("bauds=%d", CONFIG_FELICITY_NEXTION_BAUD);
     nextion_command("bkcmd=0");
     nextion_command("sendxy=1");
+#endif
+}
+
+#if !CONFIG_FELICITY_EMULATOR
+static bool uart_wait_byte(uint8_t expected, TickType_t timeout)
+{
+    TickType_t deadline = xTaskGetTickCount() + timeout;
+    uint8_t value = 0;
+    while ((int32_t)(deadline - xTaskGetTickCount()) > 0) {
+        if (uart_read_bytes(PORT, &value, 1, pdMS_TO_TICKS(50)) == 1 &&
+            value == expected) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool uart_read_connect_response(char *response, size_t size,
+                                       TickType_t timeout)
+{
+    if (!response || size < 2) return false;
+    TickType_t deadline = xTaskGetTickCount() + timeout;
+    size_t used = 0;
+    unsigned terminators = 0;
+    while ((int32_t)(deadline - xTaskGetTickCount()) > 0 && used + 1 < size) {
+        uint8_t value = 0;
+        if (uart_read_bytes(PORT, &value, 1, pdMS_TO_TICKS(25)) != 1) continue;
+        if (value == 0xff) {
+            if (++terminators == 3 && used > 0) {
+                response[used] = '\0';
+                if (strstr(response, "comok ")) return true;
+                used = 0;
+                terminators = 0;
+            }
+            continue;
+        }
+        terminators = 0;
+        response[used++] = (char)value;
+    }
+    response[used] = '\0';
+    return false;
+}
+#endif
+
+bool nextion_upload_begin(size_t size)
+{
+#if CONFIG_FELICITY_EMULATOR
+    ESP_LOGI(TAG, "NX upload begin: %u bytes", (unsigned)size);
+    return true;
+#else
+    uart_flush_input(PORT);
+    static const uint8_t empty[] = {0xff, 0xff, 0xff};
+    uart_write_bytes(PORT, empty, sizeof(empty));
+    nextion_command("DRAKJHSUYDGBNCJHGJKSHBDN");
+    nextion_command("connect");
+    static const uint8_t broadcast[] = {0xff, 0xff, 'c', 'o', 'n', 'n', 'e', 'c', 't',
+                                        0xff, 0xff, 0xff};
+    uart_write_bytes(PORT, broadcast, sizeof(broadcast));
+    if (uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000)) != ESP_OK) return false;
+    char response[192];
+    if (!uart_read_connect_response(response, sizeof(response),
+                                    pdMS_TO_TICKS(1000)) ||
+        !nextion_connect_model_matches(response, CONFIG_FELICITY_NEXTION_MODEL)) {
+        ESP_LOGE("nextion", "Unexpected display response: %s", response);
+        return false;
+    }
+    ESP_LOGI("nextion", "Verified display: %s", CONFIG_FELICITY_NEXTION_MODEL);
+    nextion_command("sleep=0");
+    nextion_command("whmi-wri %u,%d,0", (unsigned)size,
+                    CONFIG_FELICITY_NEXTION_BAUD);
+    if (uart_wait_tx_done(PORT, pdMS_TO_TICKS(1000)) != ESP_OK) return false;
+    return uart_wait_byte(0x05, pdMS_TO_TICKS(5000));
+#endif
+}
+
+bool nextion_upload_chunk(const uint8_t *data, size_t size)
+{
+    if (!data || !size || size > 4096) return false;
+#if CONFIG_FELICITY_EMULATOR
+    return true;
+#else
+    int written = uart_write_bytes(PORT, data, size);
+    if (written != (int)size ||
+        uart_wait_tx_done(PORT, pdMS_TO_TICKS(2000)) != ESP_OK) {
+        return false;
+    }
+    return uart_wait_byte(0x05, pdMS_TO_TICKS(5000));
+#endif
+}
+
+bool nextion_upload_finish(void)
+{
+#if CONFIG_FELICITY_EMULATOR
+    return true;
+#else
+    /* Nextion resets after the final acknowledged chunk and emits 0x88 only
+     * after its internal flash migration is complete. */
+    return uart_wait_byte(0x88, pdMS_TO_TICKS(45000));
 #endif
 }
 

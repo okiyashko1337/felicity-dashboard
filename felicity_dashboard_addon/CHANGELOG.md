@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.14.0
+
+- Add local Wi-Fi OTA with two ESP32-C3 application slots and boot rollback.
+- Add verified ESP32-to-Nextion TFT updates for `NX4827P043_011C-Y`.
+- Fix the screen clock rewinding when telemetry timestamps arrive late.
+- Add update status, confirmation, progress, and cancellation to the dashboard.
+
 ## 0.13.1
 
 - Default to two expected BMS packets when upgrading an existing Home Assistant installation whose saved options do not contain the new field yet.

@@ -54,6 +54,43 @@ timeline with 180 eight-minute samples. The System chart instead shows the
 latest ten minutes with up to 60 ten-second samples. For full System detail,
 set the Home Assistant add-on `system_interval` option to `10` seconds.
 
+## Wi-Fi updates for ESP32 and Nextion
+
+Version 0.14.0 introduces one update path for the complete ESP-Nextion screen:
+
+1. Home Assistant bundles the tested ESP32 `.bin` and Nextion `.tft` files.
+2. The ESP32 checks `/api/device/update` every 15 seconds.
+3. An ESP32 image is downloaded into the inactive OTA slot, verified with
+   SHA-256, booted once, and kept only after Wi-Fi, NVS, and the Nextion UART
+   initialize successfully. Otherwise the bootloader rolls back.
+4. A Nextion image is first staged in ESP32 flash and verified with SHA-256.
+   The controller then checks that the display identifies itself exactly as
+   `NX4827P043_011C-Y` before sending 4096-byte packets over UART.
+
+The current installed firmware uses a single application partition, so the
+first move to the OTA partition table is necessarily a **one-time USB flash**.
+This writes the bootloader, partition table, initial OTA data, and application:
+
+```sh
+source "$HOME/.espressif/tools/activate_idf_v6.0.2.sh"
+idf.py -C esp32 -B build-hardware flash
+```
+
+The new table keeps NVS at the same address and size as the old single-app
+layout, so the normal `flash` action preserves saved Wi-Fi and Home Assistant
+settings. Do not run `erase-flash` unless you intentionally want a factory
+reset.
+Every later ESP32 firmware and Nextion UI update is started from the dashboard
+and travels over the local Wi-Fi network. Do not remove power while a Nextion
+update is in its UART installation phase; unlike the ESP32 app slots, the
+display itself has no rollback partition.
+
+The update transport currently uses plain HTTP on the trusted home LAN. SHA-256
+detects truncated or mismatched files, but it is not a publisher signature.
+Keep the add-on port on the local network only (never forward it from the
+router). Cryptographic release signing is the next hardening step if the LAN
+itself must be treated as hostile.
+
 ## Emulator build
 
 The emulator configuration avoids Wi-Fi and prints every Nextion command as an
