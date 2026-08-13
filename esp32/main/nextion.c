@@ -205,10 +205,15 @@ static void render_yin_yang(int x)
     nextion_command("cir %d,16,9,%d", x, COLOR_LOGO_OUTLINE);
 }
 
-static void render_home_identity(void)
+static void render_home_identity(const char *ha_app_version)
 {
     nextion_command("fill 0,0,178,32,%d", COLOR_HEADER);
     render_yin_yang(15);
+    char version_label[16];
+    nextion_format_version_label(ha_app_version, version_label,
+                                 sizeof(version_label));
+    nextion_text(32, 3, 142, 26, 2, COLOR_LOGO_OUTLINE, COLOR_HEADER,
+                 version_label);
 }
 
 static void render_detail_identity(void)
@@ -258,9 +263,10 @@ void nextion_render_home_values(const dashboard_snapshot_t *s,
 }
 
 void nextion_render_home(const dashboard_snapshot_t *s,
-                         const dashboard_summary_t *summary, bool live)
+                         const dashboard_summary_t *summary, bool live,
+                         const char *ha_app_version)
 {
-    render_home_identity();
+    render_home_identity(ha_app_version);
     nextion_render_home_values(s, summary, live);
 }
 

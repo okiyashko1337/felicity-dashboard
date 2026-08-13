@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.14.1
+
+- Show the installed Home Assistant app version beside the yin-yang mark on
+  the six-card Nextion home page.
+
 ## 0.14.0
 
 - Add local Wi-Fi OTA with two ESP32-C3 application slots and boot rollback.
