@@ -100,7 +100,7 @@ void app_main(void)
      * may have used the same physical HMI page for its own UI. */
     nextion_command("ref_stop");
     nextion_show_page(DASH_PAGE_HOME);
-    nextion_render_home(&snapshot, &summary, current_live);
+    nextion_render_home(&snapshot, &summary, current_live, ha_app_version);
     nextion_render_clock();
     nextion_command("ref_star");
 
@@ -124,7 +124,8 @@ void app_main(void)
                          update.version);
                 device_update_apply(api_base_url, &update);
                 nextion_command("page home");
-                nextion_render_home(&snapshot, &summary, current_live);
+                nextion_render_home(&snapshot, &summary, current_live,
+                                    ha_app_version);
             }
 #endif
             next_update = now + pdMS_TO_TICKS(15000);
@@ -165,7 +166,7 @@ void app_main(void)
                                                   summary_live);
                         } else {
                             nextion_render_home(&snapshot, &summary,
-                                                current_live);
+                                                current_live, ha_app_version);
                         }
                         nextion_render_clock();
                         nextion_command("ref_star");
@@ -294,7 +295,7 @@ void app_main(void)
                         nextion_show_page(page);
                         if (page == DASH_PAGE_HOME) {
                             nextion_render_home(&snapshot, &summary,
-                                                current_live);
+                                                current_live, ha_app_version);
                         } else if (page == DASH_PAGE_GAPS) {
                             nextion_render_gaps(&gaps, gaps_live);
                         } else {
