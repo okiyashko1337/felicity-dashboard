@@ -11,33 +11,40 @@ Play the doorbell's original G.722 wideband audio together with the live H.264 v
 - Incoming audio: G.722 wideband, `trackID=2`, receive-only.
 - Backchannel audio: G.722, `trackID=3`, send-only.
 - Ajax advertises incoming audio as `G722/16000`. G.722 audio is sampled at 16 kHz, but RTP payload type 9 uses an 8 kHz RTP timestamp clock. The audio payload itself must remain unchanged.
-- Current direct-LibVLC test reaches the stream but reports `could not identify codec` for the audio track.
+- Android LibVLC 3.5.1 receives the track but exposes it as `undf`: both its
+  live555 and WAV codec-tag mappings omit G.722, although the bundled decoder
+  itself exists.
 
 ## Receive path
 
-1. Capture and preserve a sanitized reference `DESCRIBE` response and verify payload type, control URLs, channel count and transport options.
-2. Put a small loopback RTSP control proxy between LibVLC and Ajax. It must:
-   - proxy `DESCRIBE`, `SETUP`, `PLAY`, keepalive and `TEARDOWN`;
-   - handle Ajax Digest authentication using credentials kept in Android private preferences;
-   - rewrite only the incoming SDP declaration `G722/16000` to the RTP-standard `G722/8000`;
-   - update `Content-Length` after that edit;
-   - forward all RTP/RTCP interleaved bytes unchanged;
-   - never decode, encode, resample or otherwise transform incoming audio.
-3. Point the existing single LibVLC player at the loopback RTSP endpoint. LibVLC then owns H.264/G.722 decoding, A/V timing and Android audio output.
-4. Confirm LibVLC exposes one H.264 video track and one G.722 audio track, then confirm Android creates a PCM `AudioTrack` at the expected output rate.
-5. Connect the speaker privacy control to the single player's audio volume. Muting must not interrupt video or tear down RTSP.
+1. Keep H.264 video on the proven direct LibVLC RTSP/TCP path.
+2. Open a second authenticated RTSP/TCP session for receive-only `trackID=2`.
+3. Remove the RTP header and decode each original G.722 payload locally with
+   the public-domain decoder adapted from Android Open Source Project.
+4. Play the resulting 16 kHz mono PCM through Android `AudioTrack`.
+5. Connect the speaker privacy control to `AudioTrack` volume. Muting does not
+   stop video and no incoming network audio is transcoded or re-encoded.
+
+This receive path was physically verified on the Echo Show 5: incoming
+doorbell sound is audible with normal playback.
 
 ## Talk-back path
 
+Status: the control, microphone capture and experimental G.722 send path are
+present, but outgoing sound has **not** been heard at the Ajax doorbell and is
+therefore not considered working. Do not describe two-way audio as complete.
+
 1. Keep the separate ONVIF backchannel negotiation for `trackID=3` because this is a send-only media direction.
-2. Capture mono PCM from `AudioRecord` at 16 kHz only while the user holds `TALK`.
+2. Capture mono PCM from `AudioRecord` at 16 kHz only while the microphone
+   control in the persistent top bar is enabled. There is no control overlaid
+   on the video.
 3. Encode PCM to G.722 and packetize it as RTP payload type 9 for the negotiated server port. This is required source encoding, not transcoding of the incoming stream.
 4. Pause local playback while talking to prevent acoustic feedback; restore it immediately on release.
 5. Enforce privacy coupling:
    - speaker mute immediately disables and stops the microphone/backchannel;
    - enabling the microphone automatically enables incoming sound;
    - microphone off stops transmission but may leave listening enabled;
-   - no audio capture exists outside an active hold-to-talk gesture.
+   - no audio capture exists while the top-bar microphone is disabled.
 
 ## Ring lifecycle
 
@@ -51,5 +58,7 @@ Play the doorbell's original G.722 wideband audio together with the live H.264 v
 
 - Log control-plane states without URLs containing credentials: SDP accepted, video track, audio track, decoder opened, AudioTrack opened, backchannel started/stopped.
 - Record packet/byte counters and RTP sequence gaps, but never record audio payloads in production logs.
-- Verify: audible doorbell sound, no pitch/time distortion, stable video, mute/unmute, push-to-talk at the doorbell, privacy coupling, Ring-only activation and automatic return after 60 seconds.
+- Verified: audible incoming doorbell sound, stable video and mute/unmute.
+- Still required: confirm outgoing push-to-talk at the doorbell before marking
+  two-way audio complete.
 - Test repeated rings, network interruption, doorbell reboot, app cold start and 30-minute continuous viewing for resource leaks.
