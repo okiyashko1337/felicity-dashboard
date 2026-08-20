@@ -21,7 +21,12 @@ token, or third-party Android library dependency.
 - landscape immersive mode, keep-screen-on, boot receiver, and optional HOME
   launcher role;
 - on-device Settings page for API address, weather city, refresh intervals,
-  kiosk state, and client/server versions.
+  kiosk state, device uptime, and client/server versions;
+- automatic red-only night rendering at 1 lux or below, with 18% display
+  brightness and a 4-lux return threshold to prevent flicker;
+- Ajax ONVIF ring detection, live H.264 video, caller snapshot, 60-second
+  automatic return, pinch/pan/double-tap zoom, and stream statistics;
+- verified incoming Ajax G.722 audio with privacy-safe speaker control.
 
 Tap the yin-yang mark on the home page to open Settings. It is deliberately
 inactive on detail pages. Tap the weather item in the header for the forecast.
@@ -78,3 +83,44 @@ the app's private preferences.
 
 The server caches `/api/device/summary` for ten seconds, allowing Android and
 Nextion displays to refresh together without repeating the daily aggregation.
+
+## Ajax doorbell integration
+
+Open Settings and configure the Ajax ONVIF host and credentials. Credentials
+remain in Android private preferences. The home activity listens for
+`RingDetector` events; a ring opens the camera, captures one caller snapshot,
+and returns to the energy dashboard after 60 seconds. The camera tile also
+opens the same view manually.
+
+Video uses direct RTSP/TCP through LibVLC. The Ajax receive-only audio track is
+G.722 on `trackID=2`. Android LibVLC 3.5.1 exposes that track as an unidentified
+codec, so the app receives the ordered RTP stream separately, decodes the
+original G.722 payload locally, and writes 16 kHz mono PCM to Android
+`AudioTrack`. This path was physically verified on the reference Echo Show 5.
+
+The speaker and microphone controls remain visible in the camera header.
+Speaker mute also disables the microphone; enabling the microphone enables
+listening. Outgoing ONVIF backchannel code is experimental: no sound has yet
+been heard at the Ajax doorbell, so two-way audio must not be considered
+complete. See [AJAX_AUDIO_PLAN.md](AJAX_AUDIO_PLAN.md) for protocol details and
+remaining acceptance work.
+
+Avoid verbose RTSP logs in production because authenticated media URLs can
+contain credentials.
+
+## Ambient red night mode
+
+The app uses the device light sensor when available. It enters a red-only
+palette at 1 lux or below and holds the state until illumination reaches 4
+lux. This hysteresis prevents rapid switching near the threshold. Night mode
+applies to every dashboard page, graphs, weather icons, the camera preview,
+and camera controls. Display brightness is fixed at 18% in night mode and
+returns to the system setting during the day.
+
+## Operational checks
+
+- Confirm cold boot returns directly to the dashboard when it is the HOME app.
+- Verify normal and red themes by crossing both light thresholds.
+- Confirm incoming doorbell audio, speaker mute, ring-only camera activation,
+  caller snapshot, and automatic return after one minute.
+- Test network interruption and repeated camera opens for resource cleanup.
