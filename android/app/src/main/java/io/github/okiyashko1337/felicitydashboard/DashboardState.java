@@ -12,6 +12,7 @@ final class DashboardState {
     double todayPv, todayLoad, coverage, gridImport, gridExport;
     String version = "—";
     String serverUrl = "—";
+    String ajaxStatus = "Not configured";
     long lastCurrentMs;
     long lastSummaryMs;
     boolean serverOnline;

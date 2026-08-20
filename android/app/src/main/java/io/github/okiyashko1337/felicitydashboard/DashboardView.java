@@ -3,6 +3,8 @@ package io.github.okiyashko1337.felicitydashboard;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -14,18 +16,19 @@ import android.media.AudioTrack;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
+import android.os.SystemClock;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
 final class DashboardView extends View {
-    interface Listener { void onPageChanged(String metric); void onSettingsRequested(); void onWeatherSettingsRequested(); }
+    interface Listener { void onPageChanged(String metric); void onSettingsRequested(); void onWeatherSettingsRequested(); void onAjaxSettingsRequested(); void onCameraRequested(); }
     private static final String[] METRICS={"pv","load","battery","grid","system","today"};
     private static final String[] TITLES={"SOLAR","HOME LOAD","BATTERY","GRID","SYSTEM","TODAY"};
     private final DashboardState s; private final Paint p=new Paint(3); private final RectF r=new RectF(); private final GestureDetector gestures;
     private final SimpleDateFormat date=new SimpleDateFormat("dd.MM.yyyy",Locale.getDefault()), time=new SimpleDateFormat("HH:mm:ss",Locale.getDefault());
-    private Listener listener; private int page=-1; private float scale=1; private int pressedTarget=-1;
+    private Listener listener; private int page=-1; private float scale=1; private int pressedTarget=-1; private Bitmap cameraPreview;
     private final int bg=Color.rgb(7,17,15), header=Color.rgb(14,48,43), card=Color.rgb(13,39,35), cyan=Color.rgb(89,222,209), text=Color.rgb(232,248,244), muted=Color.rgb(150,190,184), green=Color.rgb(98,231,148), amber=Color.rgb(255,184,103);
 
     DashboardView(Context context, DashboardState state){super(context);s=state;setBackgroundColor(bg);gestures=new GestureDetector(context,new GestureDetector.SimpleOnGestureListener(){
@@ -34,13 +37,15 @@ final class DashboardView extends View {
         @Override public void onLongPress(MotionEvent e){if(listener==null||e.getY()>=72*scale)return;if(page==-1&&e.getX()<55*scale){sound();page=-3;invalidate();}else if(e.getX()>485*scale&&e.getX()<650*scale){sound();listener.onWeatherSettingsRequested();}}
     });}
     void setListener(Listener value){listener=value;} boolean isDetail(){return page!=-1;} boolean isChartDetail(){return page>=0;} String metric(){return page<0?"pv":METRICS[page];}
+    void reloadCameraPreview(){if(cameraPreview!=null){cameraPreview.recycle();cameraPreview=null;}cameraPreview=BitmapFactory.decodeFile(getContext().getFilesDir()+"/ajax-preview.jpg");invalidate();}
     void showHome(){page=-1;s.chart.clear();invalidate();}
     @Override public boolean onTouchEvent(MotionEvent event){if(event.getAction()==MotionEvent.ACTION_DOWN){pressedTarget=hitTarget(event.getX(),event.getY());invalidate();}else if(event.getAction()==MotionEvent.ACTION_CANCEL){pressedTarget=-1;invalidate();}return gestures.onTouchEvent(event);}
-    private int hitTarget(float x,float y){float h=64*scale;if(page==-1&&y<h&&x<55*scale)return 22;if(y<h&&x>505*scale&&x<645*scale)return 20;if(page!=-1&&y<h&&x>=55*scale&&x<230*scale)return 21;if(page==-3&&y>=108*scale&&y<190*scale)return 30;if(page==-3&&y>=200*scale&&y<282*scale)return 31;if(page!=-1||y<h)return -1;float gap=12*scale,pad=20*scale,top=h+12*scale,cw=(getWidth()-pad*2-gap*2)/3f,ch=(getHeight()-top-18*scale-gap)/2f;int col=(int)((x-pad)/(cw+gap)),row=(int)((y-top)/(ch+gap));return col>=0&&col<3&&row>=0&&row<2?row*3+col:-1;}
+    private int hitTarget(float x,float y){float h=64*scale;if(x>=300*scale&&x<=400*scale&&y>=5*scale&&y<=59*scale)return 40;if(page==-1&&y<h&&x<55*scale)return 22;if(y<h&&x>505*scale&&x<645*scale)return 20;if(page!=-1&&y<h&&x>=55*scale&&x<230*scale)return 21;if(page==-3&&y>=100*scale&&y<166*scale)return 30;if(page==-3&&y>=174*scale&&y<240*scale)return 31;if(page==-3&&y>=248*scale&&y<314*scale)return 32;if(page!=-1||y<h)return -1;float gap=12*scale,pad=20*scale,top=h+12*scale,cw=(getWidth()-pad*2-gap*2)/3f,ch=(getHeight()-top-18*scale-gap)/2f;int col=(int)((x-pad)/(cw+gap)),row=(int)((y-top)/(ch+gap));return col>=0&&col<3&&row>=0&&row<2?row*3+col:-1;}
     private void tap(float x,float y){
-        if(hitTarget(x,y)<0)return;
+        int target=hitTarget(x,y);if(target<0)return;
         sound();
-        float h=64*scale;if(page==-1&&y<h&&x<55*scale){page=-3;invalidate();return;}if(y<h&&x>505*scale&&x<645*scale){page=-2;invalidate();return;}if(page!=-1){if(y<h&&x>=55*scale&&x<230*scale){showHome();return;}if(page==-3&&y>=108*scale&&y<190*scale&&listener!=null){listener.onSettingsRequested();return;}if(page==-3&&y>=200*scale&&y<282*scale&&listener!=null){listener.onWeatherSettingsRequested();return;}return;}
+        if(target==40){if(listener!=null)listener.onCameraRequested();return;}
+        float h=64*scale;if(page==-1&&y<h&&x<55*scale){page=-3;invalidate();return;}if(y<h&&x>505*scale&&x<645*scale){page=-2;invalidate();return;}if(page!=-1){if(y<h&&x>=55*scale&&x<230*scale){showHome();return;}if(page==-3&&y>=100*scale&&y<166*scale&&listener!=null){listener.onSettingsRequested();return;}if(page==-3&&y>=174*scale&&y<240*scale&&listener!=null){listener.onWeatherSettingsRequested();return;}if(page==-3&&y>=248*scale&&y<314*scale&&listener!=null){listener.onAjaxSettingsRequested();return;}return;}
         if(y<h)return; float gap=12*scale,pad=20*scale,top=h+12*scale; float cw=(getWidth()-pad*2-gap*2)/3f,ch=(getHeight()-top-18*scale-gap)/2f;
         int col=(int)((x-pad)/(cw+gap)),row=(int)((y-top)/(ch+gap)); if(col>=0&&col<3&&row>=0&&row<2){page=row*3+col;s.chart.clear();if(listener!=null)listener.onPageChanged(metric());invalidate();}
     }
@@ -51,11 +56,12 @@ final class DashboardView extends View {
         track.write(pcm,0,count);track.play();postDelayed(()->{try{track.stop();}catch(Exception ignored){}track.release();},100);
     }
 
-    @Override protected void onDraw(Canvas c){super.onDraw(c);scale=Math.min(getWidth()/960f,getHeight()/480f);drawHeader(c);if(page==-1)drawHome(c);else if(page==-2)drawWeather(c);else if(page==-3)drawSettings(c);else drawDetail(c);if(!s.live(System.currentTimeMillis()))drawOffline(c);}
+    @Override protected void onDraw(Canvas c){super.onDraw(c);scale=Math.min(getWidth()/960f,getHeight()/480f);drawHeader(c);if(page==-1)drawHome(c);else if(page==-2)drawWeather(c);else if(page==-3)drawSettings(c);else drawDetail(c);if(!s.live(System.currentTimeMillis()))drawOffline(c);drawCameraButton(c);}
+    private void drawCameraButton(Canvas c){float inset=pressedTarget==40?3*scale:0;r.set(300*scale+inset,5*scale+inset,400*scale-inset,59*scale-inset);c.save();c.clipRect(r);if(cameraPreview!=null)c.drawBitmap(cameraPreview,null,r,p);else{p.setColor(Color.rgb(10,54,49));c.drawRect(r,p);center(c,"CAM",r.centerX(),r.centerY()+5*scale,13,text,true);}c.restore();p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(pressedTarget==40?2.5f*scale:1.5f*scale);p.setColor(cyan);c.drawRoundRect(r,9*scale,9*scale,p);p.setStyle(Paint.Style.FILL);p.setColor(0xb0000000);c.drawRoundRect(new RectF(r.left+5*scale,r.bottom-18*scale,r.right-5*scale,r.bottom-3*scale),6*scale,6*scale,p);center(c,"AJAX",r.centerX(),r.bottom-6*scale,9,cyan,true);}
     private void drawHeader(Canvas c){
         p.setStyle(Paint.Style.FILL);p.setColor(header);c.drawRect(0,0,getWidth(),64*scale,p);drawYinYang(c,30*scale,32*scale,17*scale);
         p.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);p.setTextSize(17*scale);p.setColor(cyan);p.setTextAlign(Paint.Align.LEFT);
-        p.setColor(pressedTarget==21?text:cyan);c.drawText(page==-1?"v"+s.version+" · ANDROID":"‹ BACK",56*scale,39*scale,p);
+        p.setColor(pressedTarget==21?text:cyan);c.drawText(page==-1?"v"+BuildConfig.VERSION_NAME+" · ANDROID":"‹ BACK",56*scale,39*scale,p);
         p.setTextAlign(Paint.Align.CENTER);p.setColor(s.live(System.currentTimeMillis())?green:amber);c.drawText(s.live(System.currentTimeMillis())?"LIVE":"NO DATA",450*scale,39*scale,p);
         if(pressedTarget==20){p.setColor(Color.rgb(28,78,70));c.drawRoundRect(new RectF(495*scale,5*scale,625*scale,59*scale),14*scale,14*scale,p);}drawWeatherIcon(c,525*scale,30*scale,19*scale,s.weatherCode);p.setTextSize(23*scale);p.setColor(text);p.setTextAlign(Paint.Align.LEFT);c.drawText(s.hasWeather()?n(s.weatherTemperature,0)+"°C":"—",553*scale,41*scale,p);
         p.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);p.setTextSize(27*scale);p.setColor(text);p.setTextAlign(Paint.Align.RIGHT);Date now=new Date();c.drawText(date.format(now),775*scale,43*scale,p);
@@ -75,10 +81,10 @@ final class DashboardView extends View {
         for(int i=0;i<7;i++){float x=pad+i*(w+gap);r.set(x,top,x+w,top+h);p.setColor(card);c.drawRoundRect(r,14*scale,14*scale,p);String day=dayName(s.forecastDate[i],i);center(c,day,r.centerX(),top+38*scale,21,i==0?cyan:text,true);drawWeatherIcon(c,r.centerX(),top+105*scale,32*scale,s.forecastCode[i]);center(c,weatherName(s.forecastCode[i]),r.centerX(),top+172*scale,17,muted,true);center(c,n(s.forecastMax[i],0)+"°",r.centerX(),top+235*scale,32,text,true);center(c,n(s.forecastMin[i],0)+"°",r.centerX(),top+282*scale,27,muted,false);center(c,"MAX / MIN",r.centerX(),top+315*scale,14,muted,false);}
     }
     private void drawSettings(Canvas c){
-        center(c,"SETTINGS",getWidth()/2f,94*scale,25,cyan,true);drawSettingRow(c,0,"FELICITY SERVER",s.serverUrl,"Tap to edit",108*scale);drawSettingRow(c,1,"WEATHER LOCATION",s.location,"Tap to choose city",200*scale);
-        float top=302*scale,gap=10*scale,w=(getWidth()-56*scale-gap*2)/3f;settingInfo(c,28*scale,top,w,"UPDATE","Live 2s · Summary 10s\nWeather 15 min");settingInfo(c,28*scale+w+gap,top,w,"KIOSK","HOME launcher\nImmersive · Always on");settingInfo(c,28*scale+(w+gap)*2,top,w,"VERSIONS","Android "+BuildConfig.VERSION_NAME+"\nServer "+s.version);
+        center(c,"SETTINGS",getWidth()/2f,91*scale,24,cyan,true);drawSettingRow(c,0,"FELICITY SERVER",s.serverUrl,"Tap to edit",100*scale,58*scale);drawSettingRow(c,1,"WEATHER LOCATION",s.location,"Tap to choose city",174*scale,58*scale);drawSettingRow(c,2,"AJAX ONVIF",s.ajaxStatus,"Tap to configure",248*scale,58*scale);
+        float top=330*scale,gap=10*scale,w=(getWidth()-56*scale-gap*2)/3f;settingInfo(c,28*scale,top,w,"UPDATE","Live 2s · Summary 10s\nWeather 15 min");settingInfo(c,28*scale+w+gap,top,w,"DEVICE","Uptime "+uptime()+"\nKiosk · Always on");settingInfo(c,28*scale+(w+gap)*2,top,w,"VERSIONS","Android "+BuildConfig.VERSION_NAME+"\nServer "+s.version);
     }
-    private void drawSettingRow(Canvas c,int index,String label,String value,String hint,float top){float inset=pressedTarget==30+index?4*scale:0;r.set(45*scale+inset,top+inset,getWidth()-45*scale-inset,top+82*scale-inset);p.setColor(pressedTarget==30+index?Color.rgb(29,81,72):card);c.drawRoundRect(r,15*scale,15*scale,p);p.setTextAlign(Paint.Align.LEFT);p.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);p.setTextSize(17*scale);p.setColor(cyan);c.drawText(label,r.left+22*scale,top+31*scale,p);p.setTypeface(android.graphics.Typeface.DEFAULT);p.setTextSize(20*scale);p.setColor(text);c.drawText(value,r.left+220*scale,top+34*scale,p);p.setTextSize(14*scale);p.setColor(muted);c.drawText(hint,r.left+220*scale,top+62*scale,p);p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(28*scale);p.setColor(cyan);c.drawText("›",r.right-22*scale,top+51*scale,p);}
+    private void drawSettingRow(Canvas c,int index,String label,String value,String hint,float top,float height){float inset=pressedTarget==30+index?4*scale:0;r.set(45*scale+inset,top+inset,getWidth()-45*scale-inset,top+height-inset);p.setColor(pressedTarget==30+index?Color.rgb(29,81,72):card);c.drawRoundRect(r,15*scale,15*scale,p);p.setTextAlign(Paint.Align.LEFT);p.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);p.setTextSize(16*scale);p.setColor(cyan);c.drawText(label,r.left+22*scale,top+24*scale,p);p.setTypeface(android.graphics.Typeface.DEFAULT);p.setTextSize(18*scale);p.setColor(text);c.drawText(value,r.left+220*scale,top+26*scale,p);p.setTextSize(13*scale);p.setColor(muted);c.drawText(hint,r.left+220*scale,top+48*scale,p);p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(26*scale);p.setColor(cyan);c.drawText("›",r.right-22*scale,top+39*scale,p);}
     private void settingInfo(Canvas c,float left,float top,float w,String label,String lines){r.set(left,top,left+w,top+150*scale);p.setColor(card);c.drawRoundRect(r,14*scale,14*scale,p);center(c,label,r.centerX(),top+32*scale,15,cyan,true);String[] split=lines.split("\\n");for(int i=0;i<split.length;i++)center(c,split[i],r.centerX(),top+(75+i*32)*scale,17,i==0?text:muted,i==0);}
     private void drawWeatherIcon(Canvas c,float x,float y,float size,int code){
         boolean rain=(code>=51&&code<=67)||(code>=80&&code<=82)||(code>=95);boolean cloudy=code>=2;boolean snow=code>=71&&code<=77;
@@ -92,15 +98,17 @@ final class DashboardView extends View {
     private String[][] detailFacts(){switch(page){case 0:return f("PV1",w(s.pv1),"PV2",w(s.pv2),"MPPT",n(s.mppt1,0)+" / "+n(s.mppt2,0)+" V");case 1:return f("L1",w(s.l1),"L2",w(s.l2),"L3",w(s.l3));case 2:return f("VOLTAGE",n(s.batteryV,1)+" V","POWER",signed(s.batteryW)+" W","BMS SOC",n(s.bms1,0)+" / "+n(s.bms2,0)+"%");case 3:return f("L1",n(s.gridV1,1)+" V","L2",n(s.gridV2,1)+" V","L3",n(s.gridV3,1)+" V");case 4:return f("RAM",n(s.ram,1)+"%","TEMP",n(s.temperature,1)+" °C","DISK",n(s.disk,1)+"%");default:return f("LOAD",n(s.todayLoad,2)+" kWh","COVER",n(s.coverage,1)+"%","GRID IN",n(s.gridImport,2)+" kWh");}}
     private void drawChart(Canvas c,RectF box){
         p.setColor(Color.rgb(9,29,26));c.drawRoundRect(box,14*scale,14*scale,p);List<float[]> rows=s.chart;if(rows.isEmpty()){center(c,"Loading chart…",box.centerX(),box.centerY(),16,muted,false);return;}
-        float min=Float.MAX_VALUE,max=-Float.MAX_VALUE;for(float[] row:rows)if(row!=null)for(float v:row){min=Math.min(min,v);max=Math.max(max,v);}if(max<=min)max=min+1;float padding=(max-min)*.08f;min-=padding;max+=padding;
+        float min=Float.MAX_VALUE,max=-Float.MAX_VALUE;for(float[] row:rows)if(row!=null)for(float v:row){min=Math.min(min,v);max=Math.max(max,v);}boolean hasNegative=min<0;if(!hasNegative){min=0;max=Math.max(1,max*1.08f);}else{max=Math.max(max,0);if(max<=min)max=min+1;float padding=(max-min)*.08f;min-=padding;max+=padding;}
         RectF plot=new RectF(box.left+82*scale,box.top+28*scale,box.right-24*scale,box.bottom-48*scale);p.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);p.setTextSize(18*scale);p.setStrokeWidth(1*scale);
         for(int i=0;i<3;i++){float y=plot.top+plot.height()*i/2f;p.setStyle(Paint.Style.STROKE);p.setColor(Color.rgb(42,80,74));c.drawLine(plot.left,y,plot.right,y,p);p.setStyle(Paint.Style.FILL);p.setColor(muted);p.setTextAlign(Paint.Align.RIGHT);c.drawText(axis(max-(max-min)*i/2f),plot.left-9*scale,y+4*scale,p);}
         String[] ticks=page==4?new String[]{"−10m","−5m","NOW"}:new String[]{"00:00","06:00","12:00","18:00","24:00"};for(int i=0;i<ticks.length;i++){float x=plot.left+plot.width()*i/(ticks.length-1);p.setStyle(Paint.Style.STROKE);p.setColor(Color.rgb(42,80,74));c.drawLine(x,plot.top,x,plot.bottom,p);p.setStyle(Paint.Style.FILL);p.setColor(muted);p.setTextAlign(i==0?Paint.Align.LEFT:i==ticks.length-1?Paint.Align.RIGHT:Paint.Align.CENTER);c.drawText(ticks[i],x,box.bottom-13*scale,p);}
+        float zeroY=plot.bottom-plot.height()*(0-min)/(max-min);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2.4f*scale);p.setColor(cyan);c.drawLine(plot.left,zeroY,plot.right,zeroY,p);p.setStyle(Paint.Style.FILL);p.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);p.setTextSize(19*scale);p.setTextAlign(Paint.Align.RIGHT);p.setColor(cyan);c.drawText("0",plot.left-10*scale,zeroY+6*scale,p);
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.4f*scale);p.setColor(Color.rgb(79,145,136));c.drawRect(plot,p);p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.LEFT);p.setTextSize(16*scale);p.setColor(cyan);c.drawText(chartUnit(),box.left+10*scale,box.top+20*scale,p);
         int[] colors={cyan,amber,Color.rgb(115,170,255),Color.rgb(196,138,255)};c.save();c.clipRect(plot);for(int channel=0;channel<Math.min(s.chartChannels,4);channel++){Path path=new Path();boolean started=false;for(int i=0;i<rows.size();i++){float[] row=rows.get(i);if(row==null||channel>=row.length){started=false;continue;}float x=plot.left+plot.width()*i/Math.max(1,rows.size()-1);float y=plot.bottom-plot.height()*(row[channel]-min)/(max-min);if(!started){path.moveTo(x,y);started=true;}else path.lineTo(x,y);}p.setStyle(Paint.Style.STROKE);p.setStrokeWidth((channel==0?2.5f:1.5f)*scale);p.setColor(colors[channel]);c.drawPath(path,p);}c.restore();p.setStyle(Paint.Style.FILL);
     }
     private String chartUnit(){switch(page){case 0:case 1:case 5:return "POWER · W";case 2:return "SOC % / POWER W";case 3:return "VOLTAGE V / POWER W";case 4:return "SYSTEM · % / °C";default:return "VALUE";}}
     private static String axis(float value){float a=Math.abs(value);if(a>=1000)return String.format(Locale.US,"%.1fk",value/1000f);if(a>=100)return String.format(Locale.US,"%.0f",value);return String.format(Locale.US,"%.1f",value);}
+    private static String uptime(){long minutes=SystemClock.elapsedRealtime()/60000;long days=minutes/1440;long hours=(minutes%1440)/60;long mins=minutes%60;return days>0?days+"d "+hours+"h":hours>0?hours+"h "+mins+"m":mins+"m";}
     private void drawOffline(Canvas c){if(s.hasData())return;p.setColor(Color.argb(220,3,12,11));c.drawRect(0,64*scale,getWidth(),getHeight(),p);center(c,"NO DATA",getWidth()/2f,getHeight()/2f-8*scale,28,amber,true);center(c,s.error,getWidth()/2f,getHeight()/2f+28*scale,14,muted,false);}
     private void center(Canvas c,String value,float x,float y,float size,int color,boolean bold){p.setTypeface(bold?android.graphics.Typeface.DEFAULT_BOLD:android.graphics.Typeface.DEFAULT);p.setTextSize(size*scale);p.setColor(color);p.setTextAlign(Paint.Align.CENTER);c.drawText(value,x,y,p);}
     private static String w(double v){return n(v,0)+" W";} private static String signed(double v){return (v<0?"−":v>0?"+":"")+n(Math.abs(v),0);} private static String n(double v,int d){return String.format(Locale.US,"%,."+d+"f",v).replace(",", " ");}
