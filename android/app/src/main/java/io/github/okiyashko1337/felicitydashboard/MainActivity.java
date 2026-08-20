@@ -12,6 +12,10 @@ import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -24,7 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.List;
 import java.util.Locale;
 
-public final class MainActivity extends Activity implements DashboardView.Listener {
+public final class MainActivity extends Activity implements DashboardView.Listener,SensorEventListener {
     private static final String DEFAULT_URL = "http://homeassistant.local:8000";
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService network = Executors.newSingleThreadExecutor();
@@ -39,6 +43,7 @@ public final class MainActivity extends Activity implements DashboardView.Listen
     private OnvifEventClient onvif;
     private Thread onvifThread;
     private long lastCameraMs;
+    private SensorManager sensorManager;private Sensor lightSensor;private boolean redNight;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -50,11 +55,12 @@ public final class MainActivity extends Activity implements DashboardView.Listen
         if(preferences.contains("weather_latitude")){state.latitude=Double.longBitsToDouble(preferences.getLong("weather_latitude",0));state.longitude=Double.longBitsToDouble(preferences.getLong("weather_longitude",0));state.location=preferences.getString("weather_location","DEVICE LOCATION");}
         if(!preferences.getString("ajax_user","").isEmpty())state.ajaxStatus="Configured · "+preferences.getString("ajax_host","192.168.13.209:8080");
         dashboard=new DashboardView(this, state); dashboard.setListener(this); setContentView(dashboard); immersive();
+        sensorManager=(SensorManager)getSystemService(SENSOR_SERVICE);if(sensorManager!=null)lightSensor=sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
         locationManager=(LocationManager)getSystemService(LOCATION_SERVICE); if(Double.isNaN(state.latitude))requestDeviceLocation();
     }
 
-    @Override protected void onResume() { super.onResume(); active=true; nextCurrent=nextSummary=nextStatus=nextChart=nextWeather=0; dashboard.reloadCameraPreview();main.post(tick); startOnvif(); immersive(); }
-    @Override protected void onPause() { active=false; main.removeCallbacks(tick); stopOnvif(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); active=true; nextCurrent=nextSummary=nextStatus=nextChart=nextWeather=0; dashboard.reloadCameraPreview();main.post(tick); startOnvif();if(lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL); immersive(); }
+    @Override protected void onPause() { active=false; main.removeCallbacks(tick); stopOnvif();if(sensorManager!=null)sensorManager.unregisterListener(this); super.onPause(); }
     @Override protected void onDestroy() { stopOnvif();network.shutdownNow(); super.onDestroy(); }
     @Override public void onWindowFocusChanged(boolean focus) { super.onWindowFocusChanged(focus); if(focus) immersive(); }
     @Override public void onBackPressed() { if(dashboard.isDetail()) dashboard.showHome(); else immersive(); }
@@ -77,7 +83,7 @@ public final class MainActivity extends Activity implements DashboardView.Listen
     private void requestChart(){String metric=dashboard.metric(); call(()->api.chart(metric,done));}
     private void startOnvif(){SharedPreferences p=getSharedPreferences("felicity",MODE_PRIVATE);String user=p.getString("ajax_user","");if(user.isEmpty()||onvifThread!=null)return;String host=p.getString("ajax_host","192.168.13.209:8080"),password=p.getString("ajax_password","");state.ajaxStatus="Connecting · "+host;onvif=new OnvifEventClient(host,user,password,new OnvifEventClient.Listener(){
         @Override public void onListening(){main.post(()->{state.ajaxStatus="Listening · "+host;dashboard.invalidate();});}
-        @Override public void onEvent(String topic){main.post(()->{state.ajaxStatus="Event · "+shortTopic(topic);long now=System.currentTimeMillis();if(active&&isRingTopic(topic)&&now-lastCameraMs>30000){lastCameraMs=now;startActivity(new Intent(MainActivity.this,CameraActivity.class).putExtra("topic",topic).putExtra("ring",true));}dashboard.invalidate();});}
+        @Override public void onEvent(String topic){main.post(()->{state.ajaxStatus="Event · "+shortTopic(topic);long now=System.currentTimeMillis();if(active&&isRingTopic(topic)&&now-lastCameraMs>30000){lastCameraMs=now;startActivity(cameraIntent().putExtra("topic",topic).putExtra("ring",true));}dashboard.invalidate();});}
         @Override public void onError(String error){main.post(()->{state.ajaxStatus="Error · "+error;dashboard.invalidate();});}
     });onvifThread=new Thread(onvif,"ajax-onvif-events");onvifThread.start();}
     private void stopOnvif(){if(onvif!=null)onvif.stop();if(onvifThread!=null)onvifThread.interrupt();onvif=null;onvifThread=null;}
@@ -102,7 +108,10 @@ public final class MainActivity extends Activity implements DashboardView.Listen
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] results){super.onRequestPermissionsResult(requestCode,permissions,results);if(requestCode==LOCATION_PERMISSION&&results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)requestDeviceLocation();}
 
     @Override public void onPageChanged(String metric) { nextChart=0; if("system".equals(metric)||"today".equals(metric)) nextSummary=0; }
-    @Override public void onCameraRequested(){lastCameraMs=System.currentTimeMillis();startActivity(new Intent(this,CameraActivity.class).putExtra("manual",true));}
+    @Override public void onCameraRequested(){lastCameraMs=System.currentTimeMillis();startActivity(cameraIntent().putExtra("manual",true));}
+    private Intent cameraIntent(){return new Intent(this,CameraActivity.class).putExtra("red_night",redNight);}
+    @Override public void onSensorChanged(SensorEvent event){if(event.sensor.getType()!=Sensor.TYPE_LIGHT||event.values.length==0)return;float lux=event.values[0];boolean next=redNight?lux<4f:lux<=1f;if(next!=redNight){redNight=next;dashboard.setRedNight(next);WindowManager.LayoutParams attributes=getWindow().getAttributes();attributes.screenBrightness=next?.18f:WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;getWindow().setAttributes(attributes);}}
+    @Override public void onAccuracyChanged(Sensor sensor,int accuracy){}
     @Override public void onSettingsRequested() {
         final EditText input=new EditText(this); input.setSingleLine(true); input.setText(api.baseUrl()); input.setTextColor(Color.BLACK); input.setSelectAllOnFocus(true);
         new AlertDialog.Builder(this).setTitle("Felicity server").setMessage("Local API address").setView(input)
