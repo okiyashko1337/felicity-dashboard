@@ -6,6 +6,9 @@ data/
 .DS_Store
 .refact/
 build*/
+android/.gradle/
+android/local.properties
+android/app/build/
 eim_config.toml
 esp32/sdkconfig
 esp32/sdkconfig.hardware

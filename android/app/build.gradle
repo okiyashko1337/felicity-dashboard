@@ -1,0 +1,15 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'io.github.okiyashko1337.felicitydashboard'
+    compileSdk 32
+
+    defaultConfig {
+        applicationId 'io.github.okiyashko1337.felicitydashboard'
+        minSdk 23
+        targetSdk 28
+        versionCode 1
+        versionName '0.1.0'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+}
