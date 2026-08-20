@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add a native Android kiosk as an alternative to the ESP32 + Nextion monitor.
+- Cache the compact device summary for ten seconds so multiple local displays
+  can refresh System and Today without repeating the daily aggregation query.
+
 ## 0.14.1
 
 - Show the installed Home Assistant app version beside the yin-yang mark on
