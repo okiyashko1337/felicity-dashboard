@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -55,6 +56,8 @@ DEVICE_UPDATE_STORE = DeviceUpdateStore(
     Path(os.getenv("FELICITY_DEVICE_UPDATE_STATE", Path(DB_PATH).parent / "device-update.json")),
     APP_VERSION,
 )
+DEVICE_SUMMARY_CACHE_SECONDS = 10.0
+_device_summary_cache: tuple[float, dict] | None = None
 
 
 @app.get("/", include_in_schema=False)
@@ -180,6 +183,10 @@ def _device_summary_payload(system_snapshot: dict | None, analytics: dict) -> di
 @app.get("/api/device/summary")
 def device_summary() -> dict:
     """Return slow-changing System and Today values for the ESP32 home page."""
+    global _device_summary_cache
+    now = time.monotonic()
+    if _device_summary_cache and now - _device_summary_cache[0] < DEVICE_SUMMARY_CACHE_SECONDS:
+        return _device_summary_cache[1]
     today = date.today()
     tomorrow = today + timedelta(days=1)
     try:
@@ -188,7 +195,9 @@ def device_summary() -> dict:
         analytics = build_period_analytics(rows, start_day=today, end_day=tomorrow)
     except sqlite3.Error as error:
         raise HTTPException(status_code=500, detail=f"Database error: {error}") from error
-    return _device_summary_payload(system_snapshot, analytics)
+    payload = _device_summary_payload(system_snapshot, analytics)
+    _device_summary_cache = (now, payload)
+    return payload
 
 
 def _value(data: dict, *path: str) -> float:
