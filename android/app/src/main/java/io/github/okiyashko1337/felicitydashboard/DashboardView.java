@@ -6,6 +6,8 @@ import android.graphics.Color;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.LinearGradient;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
@@ -28,15 +30,16 @@ final class DashboardView extends View {
     private static final String[] TITLES={"SOLAR","HOME LOAD","BATTERY","GRID","SYSTEM","TODAY"};
     private final DashboardState s; private final Paint p=new Paint(3); private final RectF r=new RectF(); private final GestureDetector gestures;
     private final SimpleDateFormat date=new SimpleDateFormat("dd.MM.yyyy",Locale.getDefault()), time=new SimpleDateFormat("HH:mm:ss",Locale.getDefault());
-    private Listener listener; private int page=-1; private float scale=1; private int pressedTarget=-1; private Bitmap cameraPreview;
+    private Listener listener; private int page=-1; private float scale=1; private int pressedTarget=-1; private Bitmap cameraPreview;private boolean redNight;private final Paint redNightPaint=new Paint();
     private final int bg=Color.rgb(7,17,15), header=Color.rgb(14,48,43), card=Color.rgb(13,39,35), cyan=Color.rgb(89,222,209), text=Color.rgb(232,248,244), muted=Color.rgb(150,190,184), green=Color.rgb(98,231,148), amber=Color.rgb(255,184,103);
 
-    DashboardView(Context context, DashboardState state){super(context);s=state;setBackgroundColor(bg);gestures=new GestureDetector(context,new GestureDetector.SimpleOnGestureListener(){
+    DashboardView(Context context, DashboardState state){super(context);s=state;setBackgroundColor(bg);ColorMatrix redMatrix=new ColorMatrix(new float[]{.72f,.24f,.04f,0,0,.045f,.015f,.005f,0,0,.018f,.006f,.002f,0,0,0,0,0,1,0});redNightPaint.setColorFilter(new ColorMatrixColorFilter(redMatrix));gestures=new GestureDetector(context,new GestureDetector.SimpleOnGestureListener(){
         @Override public boolean onDown(MotionEvent e){return true;}
         @Override public boolean onSingleTapUp(MotionEvent e){final float x=e.getX(),y=e.getY();postDelayed(()->tap(x,y),90);postDelayed(()->{pressedTarget=-1;invalidate();},150);return true;}
         @Override public void onLongPress(MotionEvent e){if(listener==null||e.getY()>=72*scale)return;if(page==-1&&e.getX()<55*scale){sound();page=-3;invalidate();}else if(e.getX()>485*scale&&e.getX()<650*scale){sound();listener.onWeatherSettingsRequested();}}
     });}
     void setListener(Listener value){listener=value;} boolean isDetail(){return page!=-1;} boolean isChartDetail(){return page>=0;} String metric(){return page<0?"pv":METRICS[page];}
+    void setRedNight(boolean enabled){if(redNight==enabled)return;redNight=enabled;setBackgroundColor(enabled?Color.rgb(8,0,0):bg);invalidate();}
     void reloadCameraPreview(){if(cameraPreview!=null){cameraPreview.recycle();cameraPreview=null;}cameraPreview=BitmapFactory.decodeFile(getContext().getFilesDir()+"/ajax-preview.jpg");invalidate();}
     void showHome(){page=-1;s.chart.clear();invalidate();}
     @Override public boolean onTouchEvent(MotionEvent event){if(event.getAction()==MotionEvent.ACTION_DOWN){pressedTarget=hitTarget(event.getX(),event.getY());invalidate();}else if(event.getAction()==MotionEvent.ACTION_CANCEL){pressedTarget=-1;invalidate();}return gestures.onTouchEvent(event);}
@@ -56,7 +59,7 @@ final class DashboardView extends View {
         track.write(pcm,0,count);track.play();postDelayed(()->{try{track.stop();}catch(Exception ignored){}track.release();},100);
     }
 
-    @Override protected void onDraw(Canvas c){super.onDraw(c);scale=Math.min(getWidth()/960f,getHeight()/480f);drawHeader(c);if(page==-1)drawHome(c);else if(page==-2)drawWeather(c);else if(page==-3)drawSettings(c);else drawDetail(c);if(!s.live(System.currentTimeMillis()))drawOffline(c);drawCameraButton(c);}
+    @Override protected void onDraw(Canvas c){super.onDraw(c);int layer=redNight?c.saveLayer(0,0,getWidth(),getHeight(),redNightPaint):-1;scale=Math.min(getWidth()/960f,getHeight()/480f);drawHeader(c);if(page==-1)drawHome(c);else if(page==-2)drawWeather(c);else if(page==-3)drawSettings(c);else drawDetail(c);if(!s.live(System.currentTimeMillis()))drawOffline(c);drawCameraButton(c);if(redNight)c.restoreToCount(layer);}
     private void drawCameraButton(Canvas c){float inset=pressedTarget==40?3*scale:0;r.set(300*scale+inset,5*scale+inset,400*scale-inset,59*scale-inset);c.save();c.clipRect(r);if(cameraPreview!=null)c.drawBitmap(cameraPreview,null,r,p);else{p.setColor(Color.rgb(10,54,49));c.drawRect(r,p);center(c,"CAM",r.centerX(),r.centerY()+5*scale,13,text,true);}c.restore();p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(pressedTarget==40?2.5f*scale:1.5f*scale);p.setColor(cyan);c.drawRoundRect(r,9*scale,9*scale,p);p.setStyle(Paint.Style.FILL);p.setColor(0xb0000000);c.drawRoundRect(new RectF(r.left+5*scale,r.bottom-18*scale,r.right-5*scale,r.bottom-3*scale),6*scale,6*scale,p);center(c,"AJAX",r.centerX(),r.bottom-6*scale,9,cyan,true);}
     private void drawHeader(Canvas c){
         p.setStyle(Paint.Style.FILL);p.setColor(header);c.drawRect(0,0,getWidth(),64*scale,p);drawYinYang(c,30*scale,32*scale,17*scale);
