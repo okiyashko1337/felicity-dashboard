@@ -61,11 +61,14 @@ adb connect DISPLAY_IP:5555
 adb -s DISPLAY_IP:5555 install -r app/build/outputs/apk/debug/app-debug.apk
 adb -s DISPLAY_IP:5555 shell cmd package set-home-activity \
   io.github.okiyashko1337.felicitydashboard/.MainActivity
+adb -s DISPLAY_IP:5555 shell locksettings set-disabled true
 ```
 
-The last command is optional but recommended for a dedicated display. It makes
-Felicity Dashboard the HOME app, which provides reliable cold-start recovery.
-The manifest also contains a `BOOT_COMPLETED` receiver.
+The first device command makes Felicity Dashboard the HOME app. The second
+disables the non-secure swipe lock screen on a dedicated kiosk, preventing it
+from covering the dashboard after a cold boot. Do not disable a PIN, password,
+or pattern on a general-purpose device. The app also requests dismissal of a
+non-secure keyguard and contains a `BOOT_COMPLETED` receiver.
 
 Location permission is used only to choose forecast coordinates. If the device
 has no functional fused/network location backend, open Settings, tap **Weather
@@ -83,6 +86,20 @@ the app's private preferences.
 
 The server caches `/api/device/summary` for ten seconds, allowing Android and
 Nextion displays to refresh together without repeating the daily aggregation.
+
+## Network diagnostics
+
+The kiosk passively checks the local gateway, Felicity backend, and configured
+Ajax host every 30 seconds. It records only state transitions: the start of a
+full LAN outage, confirmation after ten minutes, and recovery. It never toggles
+Wi-Fi or reboots the device. The latest event is visible in Settings. Tap the
+**Network** card to read the last eight events directly on the display. The
+complete persistent log can also be collected over ADB:
+
+```sh
+adb -s DISPLAY_IP:5555 shell run-as io.github.okiyashko1337.felicitydashboard \
+  cat files/network-diagnostics.log
+```
 
 ## Ajax doorbell integration
 
