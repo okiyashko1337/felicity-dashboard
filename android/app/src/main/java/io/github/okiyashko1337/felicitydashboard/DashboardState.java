@@ -13,6 +13,9 @@ final class DashboardState {
     String version = "—";
     String serverUrl = "—";
     String ajaxStatus = "Not configured";
+    String networkRecoveryStatus = "OBSERVING";
+    String networkRecoveryDetail = "No network events";
+    final String[] networkDiagnostics = new String[8];
     long lastCurrentMs;
     long lastSummaryMs;
     boolean serverOnline;

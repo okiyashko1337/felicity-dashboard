@@ -8,8 +8,8 @@ android {
         applicationId 'io.github.okiyashko1337.felicitydashboard'
         minSdk 23
         targetSdk 28
-        versionCode 1
-        versionName '0.15.0'
+        versionCode 2
+        versionName '0.15.1'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 }

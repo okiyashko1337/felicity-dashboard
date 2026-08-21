@@ -2,6 +2,7 @@ package io.github.okiyashko1337.felicitydashboard;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -17,12 +18,14 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.util.Log;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.List;
@@ -32,11 +35,13 @@ public final class MainActivity extends Activity implements DashboardView.Listen
     private static final String DEFAULT_URL = "http://homeassistant.local:8000";
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService network = Executors.newSingleThreadExecutor();
+    private final ExecutorService watchdogExecutor = Executors.newSingleThreadExecutor();
     private final DashboardState state = new DashboardState();
     private DashboardView dashboard;
     private ApiClient api;
     private boolean active;
     private long nextCurrent, nextSummary, nextStatus, nextChart, nextWeather;
+    private long nextWatchdog;
     private boolean locating;
     private LocationManager locationManager;
     private static final int LOCATION_PERMISSION = 41;
@@ -44,14 +49,17 @@ public final class MainActivity extends Activity implements DashboardView.Listen
     private Thread onvifThread;
     private long lastCameraMs;
     private SensorManager sensorManager;private Sensor lightSensor;private boolean redNight;
+    private NetworkWatchdog watchdog;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        prepareKioskWindow();
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         SharedPreferences preferences=getSharedPreferences("felicity", Context.MODE_PRIVATE);
         api=new ApiClient(state, preferences.getString("base_url", DEFAULT_URL));
         state.serverUrl=api.baseUrl();
+        watchdog=new NetworkWatchdog(this,state,preferences);
         if(preferences.contains("weather_latitude")){state.latitude=Double.longBitsToDouble(preferences.getLong("weather_latitude",0));state.longitude=Double.longBitsToDouble(preferences.getLong("weather_longitude",0));state.location=preferences.getString("weather_location","DEVICE LOCATION");}
         if(!preferences.getString("ajax_user","").isEmpty())state.ajaxStatus="Configured · "+preferences.getString("ajax_host","192.168.13.209:8080");
         dashboard=new DashboardView(this, state); dashboard.setListener(this); setContentView(dashboard); immersive();
@@ -59,14 +67,30 @@ public final class MainActivity extends Activity implements DashboardView.Listen
         locationManager=(LocationManager)getSystemService(LOCATION_SERVICE); if(Double.isNaN(state.latitude))requestDeviceLocation();
     }
 
-    @Override protected void onResume() { super.onResume(); active=true; nextCurrent=nextSummary=nextStatus=nextChart=nextWeather=0; dashboard.reloadCameraPreview();main.post(tick); startOnvif();if(lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL); immersive(); }
+    @Override protected void onResume() { super.onResume(); prepareKioskWindow(); active=true; nextCurrent=nextSummary=nextStatus=nextChart=nextWeather=nextWatchdog=0; dashboard.reloadCameraPreview();main.post(tick); startOnvif();if(lightSensor!=null)sensorManager.registerListener(this,lightSensor,SensorManager.SENSOR_DELAY_NORMAL); immersive(); }
     @Override protected void onPause() { active=false; main.removeCallbacks(tick); stopOnvif();if(sensorManager!=null)sensorManager.unregisterListener(this); super.onPause(); }
-    @Override protected void onDestroy() { stopOnvif();network.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() { stopOnvif();network.shutdownNow();watchdogExecutor.shutdownNow(); super.onDestroy(); }
     @Override public void onWindowFocusChanged(boolean focus) { super.onWindowFocusChanged(focus); if(focus) immersive(); }
     @Override public void onBackPressed() { if(dashboard.isDetail()) dashboard.showHome(); else immersive(); }
 
     private void immersive() {
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+    }
+
+    private void prepareKioskWindow() {
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true);
+            setTurnScreenOn(true);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            if (keyguard != null && keyguard.isKeyguardLocked()) {
+                keyguard.requestDismissKeyguard(this, null);
+            }
+        }
     }
 
     private final Runnable tick = new Runnable() { @Override public void run() {
@@ -75,6 +99,7 @@ public final class MainActivity extends Activity implements DashboardView.Listen
         if(now>=nextStatus){nextStatus=now+5000; call(() -> api.status(done));}
         if(now>=nextSummary){nextSummary=now+10000; call(() -> api.summary(done));}
         if(now>=nextWeather){nextWeather=now+15*60*1000;if(Double.isNaN(state.latitude))requestDeviceLocation();else call(()->api.weather(done));}
+        if(now>=nextWatchdog){nextWatchdog=now+30000;watchdogExecutor.execute(()->{watchdog.check();main.post(()->dashboard.invalidate());});}
         if(dashboard.isChartDetail() && now>=nextChart){nextChart=now+(dashboard.metric().equals("system")?10000:60000); requestChart();}
         dashboard.invalidate(); main.postDelayed(this,500);
     }};
@@ -83,7 +108,7 @@ public final class MainActivity extends Activity implements DashboardView.Listen
     private void requestChart(){String metric=dashboard.metric(); call(()->api.chart(metric,done));}
     private void startOnvif(){SharedPreferences p=getSharedPreferences("felicity",MODE_PRIVATE);String user=p.getString("ajax_user","");if(user.isEmpty()||onvifThread!=null)return;String host=p.getString("ajax_host","192.168.13.209:8080"),password=p.getString("ajax_password","");state.ajaxStatus="Connecting · "+host;onvif=new OnvifEventClient(host,user,password,new OnvifEventClient.Listener(){
         @Override public void onListening(){main.post(()->{state.ajaxStatus="Listening · "+host;dashboard.invalidate();});}
-        @Override public void onEvent(String topic){main.post(()->{state.ajaxStatus="Event · "+shortTopic(topic);long now=System.currentTimeMillis();if(active&&isRingTopic(topic)&&now-lastCameraMs>30000){lastCameraMs=now;startActivity(cameraIntent().putExtra("topic",topic).putExtra("ring",true));}dashboard.invalidate();});}
+        @Override public void onEvent(String topic){main.post(()->{state.ajaxStatus="Event · "+shortTopic(topic);long now=System.currentTimeMillis();if(active&&isRingTopic(topic)&&now-lastCameraMs>30000){lastCameraMs=now;Log.i("FelicityCamera","Trigger RING · "+topic);startActivity(cameraIntent().putExtra("topic",topic).putExtra("ring",true).putExtra("trigger","RING"));}dashboard.invalidate();});}
         @Override public void onError(String error){main.post(()->{state.ajaxStatus="Error · "+error;dashboard.invalidate();});}
     });onvifThread=new Thread(onvif,"ajax-onvif-events");onvifThread.start();}
     private void stopOnvif(){if(onvif!=null)onvif.stop();if(onvifThread!=null)onvifThread.interrupt();onvif=null;onvifThread=null;}
@@ -108,7 +133,7 @@ public final class MainActivity extends Activity implements DashboardView.Listen
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] results){super.onRequestPermissionsResult(requestCode,permissions,results);if(requestCode==LOCATION_PERMISSION&&results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)requestDeviceLocation();}
 
     @Override public void onPageChanged(String metric) { nextChart=0; if("system".equals(metric)||"today".equals(metric)) nextSummary=0; }
-    @Override public void onCameraRequested(){lastCameraMs=System.currentTimeMillis();startActivity(cameraIntent().putExtra("manual",true));}
+    @Override public void onCameraRequested(){lastCameraMs=System.currentTimeMillis();Log.i("FelicityCamera","Trigger MANUAL");startActivity(cameraIntent().putExtra("manual",true).putExtra("trigger","MANUAL"));}
     private Intent cameraIntent(){return new Intent(this,CameraActivity.class).putExtra("red_night",redNight);}
     @Override public void onSensorChanged(SensorEvent event){if(event.sensor.getType()!=Sensor.TYPE_LIGHT||event.values.length==0)return;float lux=event.values[0];boolean next=redNight?lux<4f:lux<=1f;if(next!=redNight){redNight=next;dashboard.setRedNight(next);WindowManager.LayoutParams attributes=getWindow().getAttributes();attributes.screenBrightness=next?.18f:WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;getWindow().setAttributes(attributes);}}
     @Override public void onAccuracyChanged(Sensor sensor,int accuracy){}
