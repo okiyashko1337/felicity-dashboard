@@ -37,7 +37,7 @@ final class NetworkWatchdog {
     void check() {
         long now = System.currentTimeMillis();
         String backend = uriHost(state.serverUrl);
-        String ajax = ajaxHost(preferences.getString("ajax_host", ""));
+        String ajax = ajaxHost(preferences.getString("profile_g_host", ""));
         String gateway = gatewayAddress();
         boolean backendUp = ping(backend);
         boolean ajaxUp = ping(ajax);
