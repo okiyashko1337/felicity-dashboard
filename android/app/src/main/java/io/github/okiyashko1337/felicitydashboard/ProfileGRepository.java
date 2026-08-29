@@ -3,6 +3,7 @@ package io.github.okiyashko1337.felicitydashboard;
 import android.content.SharedPreferences;
 import android.util.Log;
 import java.util.List;
+import java.util.Collections;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
@@ -14,10 +15,13 @@ final class ProfileGRepository {
     }
     private static String host="",user="",password="";
     private static ProfileGClient.ProbeResult catalog;
+    private static Boolean metadataSearch;
     private static final Map<String,String> replayUris=new HashMap<>();
     private ProfileGRepository(){}
 
-    static synchronized void set(String valueHost,String valueUser,String valuePassword,ProfileGClient.ProbeResult valueCatalog){if(!valueHost.equals(host)||!valueUser.equals(user)||!valuePassword.equals(password))replayUris.clear();host=valueHost;user=valueUser;password=valuePassword;catalog=valueCatalog;}
+    static synchronized void set(String valueHost,String valueUser,String valuePassword,ProfileGClient.ProbeResult valueCatalog){if(!valueHost.equals(host)||!valueUser.equals(user)||!valuePassword.equals(password)){replayUris.clear();metadataSearch=null;}host=valueHost;user=valueUser;password=valuePassword;catalog=valueCatalog;}
+
+    private static boolean probeMetadataSearch(ProfileGClient client,String endpoint){synchronized(ProfileGRepository.class){if(metadataSearch!=null)return metadataSearch;}try{boolean supported=client.supportsMetadataSearch(endpoint);synchronized(ProfileGRepository.class){metadataSearch=supported;}return supported;}catch(Exception error){Log.w("FelicityProfileG","Metadata search capability unavailable · "+error.getMessage());synchronized(ProfileGRepository.class){metadataSearch=false;}return false;}}
 
     private static String cachedReplayUri(ProfileGClient client,String endpoint,String cacheKey,String recordingToken)throws Exception{synchronized(ProfileGRepository.class){String cached=replayUris.get(cacheKey);if(cached!=null)return cached;}String loaded=client.replayUri(endpoint,recordingToken);synchronized(ProfileGRepository.class){replayUris.put(cacheKey,loaded);}return loaded;}
 
@@ -30,7 +34,7 @@ final class ProfileGRepository {
     }
 
     static List<ProfileGClient.SearchEvent> events(SharedPreferences prefs,String camera,long start,long end,boolean substream)throws Exception{
-        String currentHost=prefs.getString("profile_g_host","192.168.13.234:8080"),currentUser=prefs.getString("profile_g_user",""),currentPassword=prefs.getString("profile_g_password","");CameraCatalog.Camera selected=CameraCatalog.find(prefs,camera);String directToken=CameraCatalog.recordingToken(selected,substream);ProfileGClient client=new ProfileGClient(currentHost,currentUser,currentPassword);if(!directToken.isEmpty()){try{return client.searchEvents("http://"+currentHost+"/onvif/search_service",directToken,start,end);}catch(Exception fastError){Log.w("FelicityProfileG","Timeline fast path fallback · "+fastError.getMessage());}}ProfileGClient.ProbeResult active=load(currentHost,currentUser,currentPassword);ProfileGClient.Recording recording=find(active,camera,substream);if(recording==null)throw new Exception(camera+" is not recorded by the NVR");return client.searchEvents(active.searchEndpoint,recording.token,start,end);
+        String currentHost=prefs.getString("profile_g_host","192.168.13.234:8080"),currentUser=prefs.getString("profile_g_user",""),currentPassword=prefs.getString("profile_g_password","");ProfileGClient client=new ProfileGClient(currentHost,currentUser,currentPassword);String directEndpoint="http://"+currentHost+"/onvif/search_service";probeMetadataSearch(client,directEndpoint);Log.i("FelicityProfileG","Semantic archive timeline uses the 3ye index; replay metadata enrichment is off by default");return Collections.emptyList();
     }
 
     static ProfileGClient.Recording find(ProfileGClient.ProbeResult source,String camera){

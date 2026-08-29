@@ -37,7 +37,7 @@
         <activity android:name=".EventsActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity android:name=".ArchiveActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity android:name=".CameraPickerActivity" android:exported="false" android:screenOrientation="landscape" />
-        <activity android:name=".UxPrototypeActivity" android:exported="true" android:screenOrientation="landscape" />
+        <activity android:name=".UxPrototypeActivity" android:exported="false" android:screenOrientation="landscape" />
         <service android:name=".NavigationService" android:exported="false" />
         <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
             <intent-filter>

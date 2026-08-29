@@ -177,6 +177,14 @@ final class ProfileGClient {
         String uri=element(response,"Uri");if(uri==null||uri.isEmpty())throw new Exception("Profile G replay URI missing");return uri;
     }
 
+    boolean supportsMetadataSearch(String endpoint)throws Exception{
+        String action=SEARCH_NS+"/GetServiceCapabilities",body="<tse:GetServiceCapabilities/>";
+        String response=post(endpoint,action,envelope(endpoint,action,body,"xmlns:tse=\""+SEARCH_NS+"\""));
+        Matcher capabilities=Pattern.compile("<(?:\\w+:)?Capabilities\\b([^>]*)>",Pattern.CASE_INSENSITIVE).matcher(response);
+        String value=capabilities.find()?attribute(capabilities.group(1),"MetadataSearch"):null;
+        boolean supported="true".equalsIgnoreCase(value)||"1".equals(value);Log.i(TAG,"Metadata search capability · "+supported);return supported;
+    }
+
     List<SearchEvent> searchEvents(String endpoint,String recordingToken,long start,long end)throws Exception{
         String body="<tse:FindEvents><tse:StartPoint>"+utc(start)+"</tse:StartPoint><tse:EndPoint>"+utc(end)+"</tse:EndPoint><tse:Scope><tt:IncludedRecordings>"+escape(recordingToken)+"</tt:IncludedRecordings></tse:Scope><tse:SearchFilter/><tse:IncludeStartState>false</tse:IncludeStartState><tse:MaxMatches>1000</tse:MaxMatches><tse:KeepAliveTime>PT20S</tse:KeepAliveTime></tse:FindEvents>";
         String response=post(endpoint,SEARCH_NS+"/FindEvents",envelope(endpoint,SEARCH_NS+"/FindEvents",body,"xmlns:tse=\""+SEARCH_NS+"\" xmlns:tt=\"http://www.onvif.org/ver10/schema\""));
