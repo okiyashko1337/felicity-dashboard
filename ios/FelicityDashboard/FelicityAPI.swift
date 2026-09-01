@@ -25,8 +25,22 @@ actor FelicityAPI: DashboardProviding {
         )
     }
 
+    func chart(baseURL: URL, metric: DashboardMetric) async throws -> DashboardChart {
+        try DashboardChart.decode(await data(baseURL: baseURL, path: "/api/device/chart?metric=\(metric.rawValue)"))
+    }
+
     private func data(baseURL: URL, path: String) async throws -> Data {
-        let originalURL = baseURL.appending(path: path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+        let normalized = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let originalURL: URL
+        if let question = normalized.firstIndex(of: "?") {
+            let route = String(normalized[..<question])
+            var components = URLComponents(url: baseURL.appending(path: route), resolvingAgainstBaseURL: false)
+            components?.percentEncodedQuery = String(normalized[normalized.index(after: question)...])
+            guard let value = components?.url else { throw APIError.invalidServer }
+            originalURL = value
+        } else {
+            originalURL = baseURL.appending(path: normalized)
+        }
         let candidates = ipv4PreferredCandidates(for: originalURL)
         var lastError: Error?
         for candidate in candidates {

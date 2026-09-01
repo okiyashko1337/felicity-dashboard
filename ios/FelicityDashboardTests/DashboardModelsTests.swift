@@ -21,6 +21,16 @@ final class DashboardModelsTests: XCTestCase {
         XCTAssertEqual(value.coverage, 92)
     }
 
+    func testChartPayloadPreservesChannelsAndGaps() throws {
+        let data = Data(#"{"channels":3,"samples":[[0,12,-4],null,[25,18,0]]}"#.utf8)
+        let chart = try DashboardChart.decode(data)
+        XCTAssertEqual(chart.channels, 3)
+        XCTAssertEqual(chart.samples.count, 3)
+        XCTAssertEqual(chart.samples[0], [0, 12, -4])
+        XCTAssertNil(chart.samples[1])
+        XCTAssertEqual(chart.samples[2], [25, 18, 0])
+    }
+
     func testH264FragmentedKeyframeIsReassembled() {
         var units: [VideoAccessUnit] = []
         let depacketizer = RTPDepacketizer(isHEVC: false) { units.append($0) }
@@ -102,6 +112,13 @@ final class DashboardModelsTests: XCTestCase {
         packet.append(contentsOf: [0, 0, 0, 0, 0, 0, 0, 0])
         let decoded = try XCTUnwrap(ReplayClock.date(fromRTP: packet))
         XCTAssertEqual(decoded.timeIntervalSince1970, Double(unix), accuracy: 0.001)
+    }
+
+    func testReplayClockFallsBackToPlayRangeAndRTPInfo() throws {
+        let anchor = try XCTUnwrap(ReplayClock.rangeStart("clock=20260901T120000Z-"))
+        let timestamp = try XCTUnwrap(ReplayClock.rtpInfoTimestamp("url=rtsp://nvr/track;seq=18;rtptime=900000"))
+        let frame = ReplayClock.date(rtpTimestamp: timestamp &+ 135_000, anchorTimestamp: timestamp, anchorDate: anchor)
+        XCTAssertEqual(frame.timeIntervalSince(anchor), 1.5, accuracy: 0.001)
     }
 
     func testTimelineGapChoosesNearestAndTiePrefersEarlier() throws {

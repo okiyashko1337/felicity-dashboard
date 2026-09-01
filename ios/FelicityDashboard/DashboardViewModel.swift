@@ -5,6 +5,10 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var snapshot = DashboardSnapshot()
     @Published private(set) var status = ServerStatus()
     @Published private(set) var error = "Waiting for data"
+    @Published private(set) var chart = DashboardChart()
+    @Published private(set) var chartMetric: DashboardMetric?
+    @Published private(set) var chartError = ""
+    @Published private(set) var isLoadingChart = false
     @Published var serverText: String
 
     private let api: any DashboardProviding
@@ -32,6 +36,29 @@ final class DashboardViewModel: ObservableObject {
             iteration += 1
             try? await Task.sleep(for: .seconds(2))
         }
+    }
+
+    func refreshChart(_ metric: DashboardMetric) async {
+        guard let baseURL = URL(string: serverText), baseURL.scheme != nil else {
+            chartError = APIError.invalidServer.localizedDescription
+            return
+        }
+        chartMetric = metric
+        if chart.samples.isEmpty { isLoadingChart = true }
+        do {
+            chart = try await api.chart(baseURL: baseURL, metric: metric)
+            chartError = ""
+        } catch {
+            chartError = error.localizedDescription
+        }
+        isLoadingChart = false
+    }
+
+    func clearChart() {
+        chart = .init()
+        chartMetric = nil
+        chartError = ""
+        isLoadingChart = false
     }
 
     private func refresh(includeSummary: Bool, includeStatus: Bool) async {

@@ -261,6 +261,30 @@ enum ReplayClock {
         return Date(timeIntervalSince1970: Double(seconds - ntpEpoch) + Double(fraction) / fractionScale)
     }
 
+    static func rtpTimestamp(_ packet: Data) -> UInt32? {
+        let bytes = [UInt8](packet)
+        guard bytes.count >= 12, bytes[0] & 0xc0 == 0x80 else { return nil }
+        return read32(bytes, 4)
+    }
+
+    static func date(rtpTimestamp: UInt32, anchorTimestamp: UInt32, anchorDate: Date) -> Date {
+        let delta = Int64(Int32(bitPattern: rtpTimestamp &- anchorTimestamp))
+        return anchorDate.addingTimeInterval(Double(delta) / 90_000)
+    }
+
+    static func rangeStart(_ header: String?) -> Date? {
+        guard let header, let clock = header.range(of: "clock=", options: .caseInsensitive) else { return nil }
+        let suffix = header[clock.upperBound...]
+        let raw = String(suffix.prefix { $0 != "-" && $0 != ";" }).trimmingCharacters(in: .whitespaces)
+        return formatter.date(from: raw)
+    }
+
+    static func rtpInfoTimestamp(_ header: String?) -> UInt32? {
+        guard let header, let range = header.range(of: #"(?i)rtptime=([0-9]+)"#, options: .regularExpression) else { return nil }
+        let match = header[range]
+        return UInt32(match.split(separator: "=").last ?? "")
+    }
+
     static func clock(_ date: Date) -> String {
         formatter.string(from: date)
     }

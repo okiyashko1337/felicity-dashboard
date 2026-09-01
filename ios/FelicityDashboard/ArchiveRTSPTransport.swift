@@ -121,12 +121,13 @@ final class ArchiveRTSPWire: @unchecked Sendable {
 }
 
 actor ArchiveRTSPClient {
-    typealias InterleavedHandler = @Sendable (Int, Data) -> Void
+    typealias InterleavedHandler = @Sendable (Int, Data) async -> Void
 
     private var wire: ArchiveRTSPWire?
     private var reader: Task<Void, Never>?
     private var sequence = 0
     private var pending: [Int: CheckedContinuation<ArchiveRTSPResponse, Error>] = [:]
+    private var timeouts: [Int: Task<Void, Never>] = [:]
     private var interleaved: InterleavedHandler?
 
     func connect(host: String, port: UInt16, interleaved: @escaping InterleavedHandler) async throws {
@@ -152,7 +153,8 @@ actor ArchiveRTSPClient {
         challenge: String = "",
         username: String = "",
         password: String = "",
-        userAgent: String = "Felicity-Archive/1"
+        userAgent: String = "Felicity-Archive/1",
+        timeout: Duration = .seconds(4)
     ) async throws -> ArchiveRTSPResponse {
         guard let wire else { throw RTSPError.disconnected }
         sequence += 1
@@ -167,9 +169,14 @@ actor ArchiveRTSPClient {
         let data = Data(lines.joined(separator: "\r\n").utf8)
         return try await withCheckedThrowingContinuation { continuation in
             pending[cseq] = continuation
+            timeouts[cseq] = Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled else { return }
+                await self?.fail(cseq: cseq, error: RTSPError.response("\(method) timed out"))
+            }
             Task {
                 do { try await wire.send(data) }
-                catch { await self.fail(cseq: cseq, error: error) }
+                catch { self.fail(cseq: cseq, error: error) }
             }
         }
     }
@@ -183,17 +190,23 @@ actor ArchiveRTSPClient {
         failAll(CancellationError())
     }
 
-    private func accept(_ message: ArchiveRTSPMessage) {
+    private func accept(_ message: ArchiveRTSPMessage) async {
         switch message {
         case let .response(response):
+            timeouts.removeValue(forKey: response.cseq)?.cancel()
             pending.removeValue(forKey: response.cseq)?.resume(returning: response)
         case let .interleaved(channel, data):
-            interleaved?(channel, data)
+            await interleaved?(channel, data)
         }
     }
 
-    private func fail(cseq: Int, error: Error) { pending.removeValue(forKey: cseq)?.resume(throwing: error) }
+    private func fail(cseq: Int, error: Error) {
+        timeouts.removeValue(forKey: cseq)?.cancel()
+        pending.removeValue(forKey: cseq)?.resume(throwing: error)
+    }
     private func failAll(_ error: Error) {
+        for timeout in timeouts.values { timeout.cancel() }
+        timeouts.removeAll()
         let values = pending.values
         pending.removeAll()
         for continuation in values { continuation.resume(throwing: error) }

@@ -6,6 +6,7 @@ protocol DashboardProviding: Sendable {
     func current(baseURL: URL, previous: DashboardSnapshot) async throws -> DashboardSnapshot
     func summary(baseURL: URL, previous: DashboardSnapshot) async throws -> DashboardSnapshot
     func status(baseURL: URL) async throws -> ServerStatus
+    func chart(baseURL: URL, metric: DashboardMetric) async throws -> DashboardChart
 }
 
 protocol CredentialStoring: Sendable {

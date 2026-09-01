@@ -247,21 +247,24 @@ struct LiveCameraView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            liveHeader
-            ZStack {
-                LiveVideoCanvas(renderer: model.renderer, camera: model.camera)
-                if let error = model.errorMessage {
-                    Text(error)
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.orange)
-                        .padding(24)
-                        .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
+        GeometryReader { proxy in
+            let compact = proxy.size.height > proxy.size.width || proxy.size.width < 900
+            VStack(spacing: 0) {
+                liveHeader(compact: compact)
+                ZStack {
+                    LiveVideoCanvas(renderer: model.renderer, camera: model.camera)
+                    if let error = model.errorMessage {
+                        Text(error)
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.orange)
+                            .padding(24)
+                            .background(.black.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
+                    }
                 }
             }
+            .background(Color.black.ignoresSafeArea())
         }
-        .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .task { await model.start() }
         .onDisappear { Task { await model.stop() } }
@@ -280,8 +283,9 @@ struct LiveCameraView: View {
         }
     }
 
-    private var liveHeader: some View {
-        ViewThatFits(in: .horizontal) {
+    private func liveHeader(compact: Bool) -> some View {
+        Group {
+            if !compact {
             HStack(spacing: 10) {
                 navigationButtons
                 streamStatistics
@@ -296,6 +300,7 @@ struct LiveCameraView: View {
                         .font(.caption.bold().monospacedDigit())
                 }
             }
+            } else {
             HStack(spacing: 8) {
                 CameraBarButton(title: "ENERGY", systemImage: "chevron.left") { dismiss() }
                 CameraBarButton(title: model.camera.name, systemImage: "video.fill") { pickerPresented = true }
@@ -304,6 +309,7 @@ struct LiveCameraView: View {
                 streamStatistics
                 qualityAndPrivacy
                 CameraBarButton(title: "ARCHIVE", systemImage: "clock.arrow.circlepath") { archivePresented = true }
+            }
             }
         }
         .padding(.horizontal, 12)

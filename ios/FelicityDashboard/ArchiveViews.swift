@@ -186,13 +186,10 @@ final class ArchiveViewModel: ObservableObject {
         loadTimeline(around: target)
         do {
             let descriptor = try await ProfileGArchiveService.shared.replay(camera: camera, quality: quality, configuration: preferences.recorderConfiguration)
-            try await session.open(
+            let openedFormat = try await session.open(
                 descriptor: descriptor,
                 configuration: preferences.recorderConfiguration,
                 fallbackSize: camera.encodedSize(for: quality),
-                onFormat: { [weak self] value in
-                    Task { @MainActor in self?.format = value; self?.renderer.configure(value) }
-                },
                 onFrame: { [weak self] unit in
                     Task { @MainActor in
                         guard let self else { return }
@@ -210,6 +207,8 @@ final class ArchiveViewModel: ObservableObject {
                 onStatistics: { [weak self] value in Task { @MainActor in self?.statistics = value } },
                 onState: { [weak self] value in Task { @MainActor in self?.state = value } }
             )
+            format = openedFormat
+            renderer.configure(openedFormat)
             seek(to: target, autoplay: false, snapToRecording: false)
         } catch {
             self.error = error.localizedDescription
@@ -322,25 +321,33 @@ struct ArchiveView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            archiveHeader
-            ZStack(alignment: .bottomLeading) {
-                ArchiveVideoCanvas(renderer: model.renderer, camera: model.camera, poster: model.poster)
-                if case .failed = model.state {
-                    Text(model.error)
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.orange)
-                        .padding(24)
-                        .background(.black.opacity(0.84), in: RoundedRectangle(cornerRadius: 16))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { proxy in
+            let portrait = proxy.size.height > proxy.size.width
+            VStack(spacing: 0) {
+                archiveHeader(compact: portrait || proxy.size.width < 900)
+                ZStack(alignment: .bottomLeading) {
+                    ArchiveVideoCanvas(renderer: model.renderer, camera: model.camera, poster: model.poster)
+                    if case .failed = model.state {
+                        Text(model.error)
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.orange)
+                            .padding(24)
+                            .background(.black.opacity(0.84), in: RoundedRectangle(cornerRadius: 16))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    if !portrait { controls }
                 }
-                controls
+                if portrait {
+                    controls
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(red: 0.07, green: 0.09, blue: 0.09))
+                }
+                ArchiveTimelineView(model: model)
+                    .frame(height: portrait ? 132 : 112)
             }
-            ArchiveTimelineView(model: model)
-                .frame(height: 112)
+            .background(Color.black.ignoresSafeArea())
         }
-        .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .task { await model.start() }
         .onDisappear { Task { await model.stop() } }
@@ -382,10 +389,10 @@ struct ArchiveView: View {
         }
     }
 
-    private var archiveHeader: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) { headerContents }
-            HStack(spacing: 6) { headerContentsCompact }
+    private func archiveHeader(compact: Bool) -> some View {
+        Group {
+            if compact { HStack(spacing: 6) { headerContentsCompact } }
+            else { HStack(spacing: 10) { headerContents } }
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 66)
@@ -409,6 +416,8 @@ struct ArchiveView: View {
         Spacer(minLength: 0)
         playbackClock
         Button(model.quality.rawValue) { Task { await model.toggleQuality() } }.buttonStyle(HeaderButtonStyle())
+        Button { livePresented = true } label: { Image(systemName: "dot.radiowaves.left.and.right").frame(width: 42, height: 42) }
+            .buttonStyle(HeaderButtonStyle())
     }
 
     private var streamStatistics: some View {
@@ -429,12 +438,20 @@ struct ArchiveView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 10) {
-            Button { model.togglePlayback() } label: { Image(systemName: model.isPlaying ? "pause.fill" : "play.fill") }
-                .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
-            Button { model.jumpRecording(-1) } label: { Label("PREV", systemImage: "backward.end.fill") }
-            Button { model.jumpRecording(1) } label: { Label("NEXT", systemImage: "forward.end.fill") }
-            Button { calendarPresented = true } label: { Label("DATE", systemImage: "calendar") }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                Button { model.togglePlayback() } label: { Image(systemName: model.isPlaying ? "pause.fill" : "play.fill") }
+                    .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
+                Button { model.jumpRecording(-1) } label: { Label("PREV", systemImage: "backward.end.fill") }
+                Button { model.jumpRecording(1) } label: { Label("NEXT", systemImage: "forward.end.fill") }
+                Button { calendarPresented = true } label: { Label("DATE", systemImage: "calendar") }
+            }
+            HStack(spacing: 8) {
+                Button { model.togglePlayback() } label: { Image(systemName: model.isPlaying ? "pause.fill" : "play.fill") }
+                Button { model.jumpRecording(-1) } label: { Image(systemName: "backward.end.fill") }
+                Button { model.jumpRecording(1) } label: { Image(systemName: "forward.end.fill") }
+                Button { calendarPresented = true } label: { Image(systemName: "calendar") }
+            }
         }
         .font(.headline.bold())
         .buttonStyle(ArchiveControlButtonStyle())
