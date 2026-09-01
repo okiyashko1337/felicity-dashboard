@@ -13,14 +13,26 @@ private enum FelicityPalette {
 
 struct AppRootView: View {
     @StateObject private var model = DashboardViewModel()
+    @StateObject private var cameras = CameraRepository()
+    @StateObject private var cameraPreferences = CameraPreferences()
     @State private var settingsPresented = false
+    @State private var activeCamera: CameraDescriptor?
 
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
                 let compact = proxy.size.width < 900
                 VStack(spacing: 0) {
-                    HeaderView(model: model, compact: compact, settingsPresented: $settingsPresented)
+                    HeaderView(
+                        model: model,
+                        selectedCamera: cameras.selected,
+                        compact: compact,
+                        settingsPresented: $settingsPresented,
+                        cameraAction: {
+                            if let camera = cameras.selected { activeCamera = camera }
+                            else { settingsPresented = true }
+                        }
+                    )
                     ScrollView {
                         DashboardGrid(snapshot: model.snapshot, compact: compact)
                             .padding(14)
@@ -38,16 +50,21 @@ struct AppRootView: View {
         .tint(FelicityPalette.accent)
         .task { await model.run() }
         .sheet(isPresented: $settingsPresented) {
-            SettingsView(model: model)
-                .presentationDetents([.medium])
+            SettingsView(model: model, cameras: cameras, cameraPreferences: cameraPreferences)
+                .presentationDetents([.large])
+        }
+        .fullScreenCover(item: $activeCamera) { camera in
+            LiveCameraView(camera: camera, repository: cameras, preferences: cameraPreferences)
         }
     }
 }
 
 private struct HeaderView: View {
     @ObservedObject var model: DashboardViewModel
+    let selectedCamera: CameraDescriptor?
     let compact: Bool
     @Binding var settingsPresented: Bool
+    let cameraAction: () -> Void
 
     var body: some View {
         HStack(spacing: 16) {
@@ -58,20 +75,24 @@ private struct HeaderView: View {
                     .accessibilityLabel("Settings")
             }
             .buttonStyle(.plain)
-            Text("v0.1.0 · iOS")
+            Text("v0.2.0 · iOS")
                 .font(.headline.monospaced())
                 .foregroundStyle(FelicityPalette.accent)
             Spacer()
-            if !compact {
-                Button(action: {}) {
-                    Label("CAMERAS", systemImage: "video.fill")
+            Button(action: cameraAction) {
+                if compact {
+                    Image(systemName: selectedCamera == nil ? "video.slash" : "video.fill")
                         .font(.headline)
+                        .frame(width: 44, height: 42)
+                } else {
+                    Label(selectedCamera?.name ?? "SET UP CAMERAS", systemImage: selectedCamera == nil ? "video.slash" : "video.fill")
+                        .font(.headline)
+                        .lineLimit(1)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+                        .frame(minHeight: 42)
                 }
-                .disabled(true)
             }
+            .buttonStyle(HomeHeaderButtonStyle())
             Text(model.isLive ? "LIVE" : "NO DATA")
                 .font((compact ? Font.subheadline : Font.headline).bold())
                 .foregroundStyle(model.isLive ? FelicityPalette.live : FelicityPalette.warning)
@@ -96,6 +117,16 @@ private struct HeaderView: View {
         .padding(.horizontal, compact ? 12 : 18)
         .frame(minHeight: 68)
         .background(FelicityPalette.header)
+    }
+}
+
+private struct HomeHeaderButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .background(configuration.isPressed ? FelicityPalette.accent.opacity(0.35) : .black.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -186,6 +217,8 @@ private struct NoDataView: View {
 
 private struct SettingsView: View {
     @ObservedObject var model: DashboardViewModel
+    @ObservedObject var cameras: CameraRepository
+    @ObservedObject var cameraPreferences: CameraPreferences
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -197,10 +230,52 @@ private struct SettingsView: View {
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
                 }
+                Section("Ajax recorder · ONVIF") {
+                    TextField("192.168.13.234:8080", text: $cameraPreferences.recorderHost)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("ONVIF username", text: $cameraPreferences.recorderUsername)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("ONVIF password", text: $cameraPreferences.recorderPassword)
+                    Button {
+                        cameraPreferences.save()
+                        Task { await cameras.discover(using: cameraPreferences.recorderConfiguration) }
+                    } label: {
+                        HStack {
+                            Label(cameras.cameras.isEmpty ? "Discover cameras" : "Refresh camera catalogue", systemImage: "arrow.triangle.2.circlepath.camera")
+                            Spacer()
+                            if cameras.isDiscovering { ProgressView() }
+                        }
+                    }
+                    .disabled(cameras.isDiscovering)
+                    if !cameras.error.isEmpty {
+                        Text(cameras.error)
+                            .foregroundStyle(.orange)
+                    } else if !cameras.cameras.isEmpty {
+                        LabeledContent("Cameras", value: cameras.cameras.count.formatted())
+                    }
+                }
+                Section("3ye events") {
+                    TextField("http://192.168.13.148:8765", text: $cameraPreferences.threeEyeURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    TextField("3ye username", text: $cameraPreferences.threeEyeUsername)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("3ye password", text: $cameraPreferences.threeEyePassword)
+                    Text("Saved now for the next Events milestone. This build does not send push notifications.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 Section {
-                    LabeledContent("Client", value: "iOS 0.1.0")
+                    LabeledContent("Client", value: "iOS 0.2.0")
                     LabeledContent("Server", value: model.status.version)
                     LabeledContent("Connection", value: model.isLive ? "Live" : "Offline")
+                    if !cameraPreferences.saveError.isEmpty {
+                        LabeledContent("Keychain", value: cameraPreferences.saveError)
+                    }
                 }
             }
             .navigationTitle("Settings")
@@ -208,6 +283,7 @@ private struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         model.saveServer()
+                        cameraPreferences.save()
                         dismiss()
                     }
                 }

@@ -15,6 +15,13 @@
 		110000000000000000000006 /* FelicityAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000006 /* FelicityAPI.swift */; };
 		110000000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000007 /* Assets.xcassets */; };
 		110000000000000000000008 /* DashboardModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000009 /* DashboardModelsTests.swift */; };
+		110000000000000000000009 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12000000000000000000000C /* KeychainStore.swift */; };
+		11000000000000000000000A /* CameraModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12000000000000000000000D /* CameraModels.swift */; };
+		11000000000000000000000B /* OnvifCameraDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12000000000000000000000E /* OnvifCameraDiscovery.swift */; };
+		11000000000000000000000C /* RTPDepacketizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12000000000000000000000F /* RTPDepacketizer.swift */; };
+		11000000000000000000000D /* LiveRTSPSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000010 /* LiveRTSPSession.swift */; };
+		11000000000000000000000E /* SampleBufferRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000011 /* SampleBufferRenderer.swift */; };
+		11000000000000000000000F /* CameraViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000012 /* CameraViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -39,6 +46,13 @@
 		120000000000000000000009 /* DashboardModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardModelsTests.swift; sourceTree = "<group>"; };
 		12000000000000000000000A /* Felicity Dashboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Felicity Dashboard.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		12000000000000000000000B /* FelicityDashboardTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FelicityDashboardTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		12000000000000000000000C /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		12000000000000000000000D /* CameraModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraModels.swift; sourceTree = "<group>"; };
+		12000000000000000000000E /* OnvifCameraDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnvifCameraDiscovery.swift; sourceTree = "<group>"; };
+		12000000000000000000000F /* RTPDepacketizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RTPDepacketizer.swift; sourceTree = "<group>"; };
+		120000000000000000000010 /* LiveRTSPSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRTSPSession.swift; sourceTree = "<group>"; };
+		120000000000000000000011 /* SampleBufferRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleBufferRenderer.swift; sourceTree = "<group>"; };
+		120000000000000000000012 /* CameraViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,6 +100,13 @@
 				120000000000000000000004 /* DashboardModels.swift */,
 				120000000000000000000005 /* DashboardViewModel.swift */,
 				120000000000000000000006 /* FelicityAPI.swift */,
+				12000000000000000000000C /* KeychainStore.swift */,
+				12000000000000000000000D /* CameraModels.swift */,
+				12000000000000000000000E /* OnvifCameraDiscovery.swift */,
+				12000000000000000000000F /* RTPDepacketizer.swift */,
+				120000000000000000000010 /* LiveRTSPSession.swift */,
+				120000000000000000000011 /* SampleBufferRenderer.swift */,
+				120000000000000000000012 /* CameraViews.swift */,
 				120000000000000000000007 /* Assets.xcassets */,
 				120000000000000000000008 /* Info.plist */,
 			);
@@ -205,6 +226,13 @@
 				110000000000000000000004 /* DashboardModels.swift in Sources */,
 				110000000000000000000005 /* DashboardViewModel.swift in Sources */,
 				110000000000000000000006 /* FelicityAPI.swift in Sources */,
+				110000000000000000000009 /* KeychainStore.swift in Sources */,
+				11000000000000000000000A /* CameraModels.swift in Sources */,
+				11000000000000000000000B /* OnvifCameraDiscovery.swift in Sources */,
+				11000000000000000000000C /* RTPDepacketizer.swift in Sources */,
+				11000000000000000000000D /* LiveRTSPSession.swift in Sources */,
+				11000000000000000000000E /* SampleBufferRenderer.swift in Sources */,
+				11000000000000000000000F /* CameraViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -233,8 +261,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = NH364DL3M9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FelicityDashboard/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -242,8 +270,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.okiyashko1337.felicitydashboard.ios;
+				MARKETING_VERSION = 0.2.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.homedashboard.ios;
 				PRODUCT_MODULE_NAME = FelicityDashboard;
 				PRODUCT_NAME = "Felicity Dashboard";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -259,8 +287,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = NH364DL3M9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FelicityDashboard/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -268,8 +296,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.okiyashko1337.felicitydashboard.ios;
+				MARKETING_VERSION = 0.2.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.homedashboard.ios;
 				PRODUCT_MODULE_NAME = FelicityDashboard;
 				PRODUCT_NAME = "Felicity Dashboard";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
