@@ -74,6 +74,15 @@ final class CameraPreferences: ObservableObject {
         )
     }
 
+    var threeEyeConfiguration: ThreeEyeConfiguration? {
+        guard let baseURL = URL(string: threeEyeURL), baseURL.scheme != nil else { return nil }
+        return ThreeEyeConfiguration(
+            baseURL: baseURL,
+            username: threeEyeUsername.trimmingCharacters(in: .whitespacesAndNewlines),
+            password: threeEyePassword
+        )
+    }
+
     func save() {
         recorderHost = recorderHost.trimmingCharacters(in: .whitespacesAndNewlines)
         recorderUsername = recorderUsername.trimmingCharacters(in: .whitespacesAndNewlines)

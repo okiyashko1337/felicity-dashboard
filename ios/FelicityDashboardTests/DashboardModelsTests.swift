@@ -63,6 +63,16 @@ final class DashboardModelsTests: XCTestCase {
         XCTAssertEqual(parsed.format.parameterSets.count, 2)
     }
 
+    func testThreeEyePayloadKeepsOnlySupportedAIEvents() throws {
+        let data = Data(#"{"objects":[{"track_id":42,"object_class":"person","captured_at_utc":"2026-08-30T07:43:26Z","first_seen_utc":"2026-08-30T07:43:20Z","last_seen_utc":"2026-08-30T07:43:31Z","camera_name":"Porch VF","confidence":0.93,"thumbnail_url":"/api/objects/42/thumbnail","image_url":"/api/objects/42/image"},{"track_id":43,"object_class":"motion","captured_at_utc":"2026-08-30T07:44:00Z","camera_name":"Porch VF"}]}"#.utf8)
+        let events = try ThreeEyeAPI.parseEvents(data, baseURL: try XCTUnwrap(URL(string: "http://192.168.13.148:8765")))
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events[0].trackID, 42)
+        XCTAssertEqual(events[0].eventClass, .person)
+        XCTAssertEqual(events[0].camera, "Porch VF")
+        XCTAssertEqual(events[0].thumbnailURL?.absoluteString, "http://192.168.13.148:8765/api/objects/42/thumbnail")
+    }
+
     private func rtp(sequence: UInt16, timestamp: UInt32, marker: Bool, payload: [UInt8]) -> Data {
         var bytes: [UInt8] = [0x80, marker ? 0xe0 : 0x60]
         bytes += [UInt8(sequence >> 8), UInt8(sequence & 0xff)]

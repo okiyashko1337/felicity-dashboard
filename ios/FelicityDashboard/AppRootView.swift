@@ -17,6 +17,7 @@ struct AppRootView: View {
     @StateObject private var cameraPreferences = CameraPreferences()
     @State private var settingsPresented = false
     @State private var activeCamera: CameraDescriptor?
+    @State private var eventsPresented = false
 
     var body: some View {
         NavigationStack {
@@ -30,6 +31,10 @@ struct AppRootView: View {
                         settingsPresented: $settingsPresented,
                         cameraAction: {
                             if let camera = cameras.selected { activeCamera = camera }
+                            else { settingsPresented = true }
+                        },
+                        eventsAction: {
+                            if cameraPreferences.threeEyeConfiguration != nil { eventsPresented = true }
                             else { settingsPresented = true }
                         }
                     )
@@ -56,6 +61,11 @@ struct AppRootView: View {
         .fullScreenCover(item: $activeCamera) { camera in
             LiveCameraView(camera: camera, repository: cameras, preferences: cameraPreferences)
         }
+        .fullScreenCover(isPresented: $eventsPresented) {
+            if let configuration = cameraPreferences.threeEyeConfiguration {
+                EventsView(configuration: configuration, cameraName: cameras.selected?.name, backLabel: "ENERGY")
+            }
+        }
     }
 }
 
@@ -65,6 +75,7 @@ private struct HeaderView: View {
     let compact: Bool
     @Binding var settingsPresented: Bool
     let cameraAction: () -> Void
+    let eventsAction: () -> Void
 
     var body: some View {
         HStack(spacing: 16) {
@@ -75,7 +86,7 @@ private struct HeaderView: View {
                     .accessibilityLabel("Settings")
             }
             .buttonStyle(.plain)
-            Text("v0.2.0 · iOS")
+            Text("v0.3.0 · iOS")
                 .font(.headline.monospaced())
                 .foregroundStyle(FelicityPalette.accent)
             Spacer()
@@ -88,6 +99,19 @@ private struct HeaderView: View {
                     Label(selectedCamera?.name ?? "SET UP CAMERAS", systemImage: selectedCamera == nil ? "video.slash" : "video.fill")
                         .font(.headline)
                         .lineLimit(1)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 42)
+                }
+            }
+            .buttonStyle(HomeHeaderButtonStyle())
+            Button(action: eventsAction) {
+                if compact {
+                    Image(systemName: "rectangle.stack.badge.person.crop")
+                        .font(.headline)
+                        .frame(width: 44, height: 42)
+                } else {
+                    Label("EVENTS", systemImage: "rectangle.stack.badge.person.crop")
+                        .font(.headline)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 42)
                 }
@@ -265,12 +289,12 @@ private struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     SecureField("3ye password", text: $cameraPreferences.threeEyePassword)
-                    Text("Saved now for the next Events milestone. This build does not send push notifications.")
+                    Text("Used for the native Events view. This build does not send push notifications.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 Section {
-                    LabeledContent("Client", value: "iOS 0.2.0")
+                    LabeledContent("Client", value: "iOS 0.3.0")
                     LabeledContent("Server", value: model.status.version)
                     LabeledContent("Connection", value: model.isLive ? "Live" : "Offline")
                     if !cameraPreferences.saveError.isEmpty {

@@ -236,6 +236,7 @@ struct LiveCameraView: View {
     @ObservedObject var preferences: CameraPreferences
     @StateObject private var model: LiveCameraViewModel
     @State private var pickerPresented = false
+    @State private var eventsPresented = false
     @Environment(\.dismiss) private var dismiss
 
     init(camera: CameraDescriptor, repository: CameraRepository, preferences: CameraPreferences) {
@@ -268,6 +269,11 @@ struct LiveCameraView: View {
                 Task { await model.switchCamera(to: camera) }
             }
         }
+        .fullScreenCover(isPresented: $eventsPresented) {
+            if let configuration = preferences.threeEyeConfiguration {
+                EventsView(configuration: configuration, cameraName: model.camera.name, backLabel: "LIVE")
+            }
+        }
     }
 
     private var liveHeader: some View {
@@ -288,6 +294,7 @@ struct LiveCameraView: View {
             HStack(spacing: 8) {
                 CameraBarButton(title: "ENERGY", systemImage: "chevron.left") { dismiss() }
                 CameraBarButton(title: model.camera.name, systemImage: "video.fill") { pickerPresented = true }
+                CameraBarButton(title: "EVENTS", systemImage: "rectangle.stack.badge.person.crop") { eventsPresented = true }
                 Spacer(minLength: 0)
                 streamStatistics
                 qualityAndPrivacy
@@ -302,6 +309,7 @@ struct LiveCameraView: View {
     @ViewBuilder private var navigationButtons: some View {
         CameraBarButton(title: "ENERGY", systemImage: "chevron.left") { dismiss() }
         CameraBarButton(title: model.camera.name, systemImage: "video.fill") { pickerPresented = true }
+        CameraBarButton(title: "EVENTS", systemImage: "rectangle.stack.badge.person.crop") { eventsPresented = true }
     }
 
     private var streamStatistics: some View {
