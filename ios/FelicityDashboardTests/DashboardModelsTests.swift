@@ -73,6 +73,48 @@ final class DashboardModelsTests: XCTestCase {
         XCTAssertEqual(events[0].thumbnailURL?.absoluteString, "http://192.168.13.148:8765/api/objects/42/thumbnail")
     }
 
+    func testAjaxActivityBatchDecodesAndBuildsContextInterval() throws {
+        let startUS: UInt64 = 1_788_244_800_000_000
+        let endUS = startUS + 4_000_000
+        let started = protoMessage([
+            protoVarint(1, startUS),
+            protoBytes(3, protoMessage([protoBytes(5, protoMessage([protoVarint(1, 2)])), protoVarint(101, 0)])),
+        ])
+        let ended = protoMessage([
+            protoVarint(1, endUS),
+            protoBytes(3, protoMessage([protoBytes(5, protoMessage([protoVarint(1, 2)])), protoVarint(101, 1)])),
+        ])
+        let batch = protoMessage([protoBytes(1, Data("A".utf8)), protoBytes(2, started), protoBytes(2, ended)])
+        let boundaries = AjaxActivityDecoder.decode(batch)
+        let intervals = ArchiveTimelineRules.intervals(from: boundaries)
+        XCTAssertEqual(boundaries.count, 2)
+        XCTAssertEqual(intervals.count, 1)
+        XCTAssertEqual(intervals[0].kind, .person)
+        XCTAssertEqual(intervals[0].start.timeIntervalSince1970, Double(startUS) / 1_000_000 - 6, accuracy: 0.001)
+        XCTAssertEqual(intervals[0].end.timeIntervalSince1970, Double(endUS) / 1_000_000 + 6, accuracy: 0.001)
+    }
+
+    func testReplayClockReadsAjaxNTPHeaderExtension() throws {
+        let unix: UInt32 = 1_788_244_800
+        let ntp = UInt64(unix) + 2_208_988_800
+        var packet = Data([0x90, 0xe0, 0, 1, 0, 1, 0x5f, 0x90, 0, 0, 0, 1, 0xab, 0xac, 0, 3])
+        packet.append(contentsOf: [UInt8(ntp >> 24), UInt8((ntp >> 16) & 0xff), UInt8((ntp >> 8) & 0xff), UInt8(ntp & 0xff)])
+        packet.append(contentsOf: [0, 0, 0, 0, 0, 0, 0, 0])
+        let decoded = try XCTUnwrap(ReplayClock.date(fromRTP: packet))
+        XCTAssertEqual(decoded.timeIntervalSince1970, Double(unix), accuracy: 0.001)
+    }
+
+    func testTimelineGapChoosesNearestAndTiePrefersEarlier() throws {
+        let origin = Date(timeIntervalSince1970: 10_000)
+        let intervals = [
+            ArchiveInterval(kind: .person, start: origin, end: origin.addingTimeInterval(10)),
+            ArchiveInterval(kind: .animal, start: origin.addingTimeInterval(30), end: origin.addingTimeInterval(40)),
+        ]
+        XCTAssertEqual(ArchiveTimelineRules.nearestRecordedTime(to: origin.addingTimeInterval(18), in: intervals), origin.addingTimeInterval(10))
+        XCTAssertEqual(ArchiveTimelineRules.nearestRecordedTime(to: origin.addingTimeInterval(20), in: intervals), origin.addingTimeInterval(10))
+        XCTAssertEqual(ArchiveTimelineRules.nearestRecordedTime(to: origin.addingTimeInterval(24), in: intervals), origin.addingTimeInterval(30))
+    }
+
     private func rtp(sequence: UInt16, timestamp: UInt32, marker: Bool, payload: [UInt8]) -> Data {
         var bytes: [UInt8] = [0x80, marker ? 0xe0 : 0x60]
         bytes += [UInt8(sequence >> 8), UInt8(sequence & 0xff)]
@@ -80,5 +122,26 @@ final class DashboardModelsTests: XCTestCase {
         bytes += [0, 0, 0, 1]
         bytes += payload
         return Data(bytes)
+    }
+
+
+    private func protoMessage(_ fields: [Data]) -> Data { fields.reduce(into: Data()) { $0.append($1) } }
+    private func protoVarint(_ field: Int, _ value: UInt64) -> Data {
+        var output = varint(UInt64(field << 3))
+        output.append(varint(value))
+        return output
+    }
+    private func protoBytes(_ field: Int, _ value: Data) -> Data {
+        var output = varint(UInt64(field << 3 | 2))
+        output.append(varint(UInt64(value.count)))
+        output.append(value)
+        return output
+    }
+    private func varint(_ source: UInt64) -> Data {
+        var value = source
+        var output = Data()
+        while value >= 0x80 { output.append(UInt8(value & 0x7f) | 0x80); value >>= 7 }
+        output.append(UInt8(value))
+        return output
     }
 }

@@ -20,3 +20,18 @@ after its iOS compiler is verified independently.
 
 Push notifications are intentionally out of scope. ONVIF ring events are
 received only while the app is active.
+
+## Archive transport
+
+Archive playback is owned by one direct RTSP-over-TCP session per open archive
+screen. `PAUSE`, `PLAY` and range seeks share that session; the app never sends
+synthetic keep-alive video frames. A lightweight `GET_PARAMETER` keeps a paused
+recorder session alive. The displayed clock and timeline cursor are updated from
+the Ajax absolute NTP extension on a delivered RTP access unit, never from the
+requested seek target.
+
+Ajax activity is queried through its replay metadata track with
+`Rate-Control: no` and `X-Ajax-Metadata-Filter: A`. The compact protobuf batch is
+decoded locally into person, animal, vehicle and ring intervals. Plain motion is
+ignored; face points come from 3ye because the Ajax activity bit mask does not
+carry a separate face class.

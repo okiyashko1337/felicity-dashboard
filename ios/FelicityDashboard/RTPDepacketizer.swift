@@ -4,6 +4,14 @@ struct VideoAccessUnit: Sendable {
     let annexB: Data
     let rtpTimestamp: UInt32
     let isKeyframe: Bool
+    let archiveTime: Date?
+
+    init(annexB: Data, rtpTimestamp: UInt32, isKeyframe: Bool, archiveTime: Date? = nil) {
+        self.annexB = annexB
+        self.rtpTimestamp = rtpTimestamp
+        self.isKeyframe = isKeyframe
+        self.archiveTime = archiveTime
+    }
 }
 
 /// Reassembles H.264/H.265 RTP payloads into complete Annex-B access units.
@@ -12,6 +20,7 @@ final class RTPDepacketizer {
     private let output: (VideoAccessUnit) -> Void
     private var access = Data()
     private var timestamp: UInt32?
+    private var archiveTime: Date?
     private var expectedSequence: UInt16?
     private var keyframe = false
     private var fragmentOpen = false
@@ -25,12 +34,13 @@ final class RTPDepacketizer {
     func reset() {
         access.removeAll(keepingCapacity: true)
         timestamp = nil
+        archiveTime = nil
         expectedSequence = nil
         keyframe = false
         fragmentOpen = false
     }
 
-    func accept(_ packet: Data) {
+    func accept(_ packet: Data, archiveTime nextArchiveTime: Date? = nil) {
         let bytes = [UInt8](packet)
         guard let payload = Self.payloadRange(bytes) else { return }
         let sequence = UInt16(bytes[2]) << 8 | UInt16(bytes[3])
@@ -43,6 +53,7 @@ final class RTPDepacketizer {
         expectedSequence = sequence &+ 1
         if let timestamp, timestamp != nextTimestamp { emit() }
         timestamp = nextTimestamp
+        if archiveTime == nil { archiveTime = nextArchiveTime }
         if isHEVC { appendH265(bytes, payload) } else { appendH264(bytes, payload) }
         if bytes[1] & 0x80 != 0 { emit() }
     }
@@ -125,11 +136,12 @@ final class RTPDepacketizer {
 
     private func emit() {
         if access.count > 4, let timestamp {
-            output(VideoAccessUnit(annexB: access, rtpTimestamp: timestamp, isKeyframe: keyframe))
+            output(VideoAccessUnit(annexB: access, rtpTimestamp: timestamp, isKeyframe: keyframe, archiveTime: archiveTime))
         }
         access.removeAll(keepingCapacity: true)
         keyframe = false
         fragmentOpen = false
+        archiveTime = nil
     }
 
     private static func payloadRange(_ packet: [UInt8]) -> Range<Int>? {

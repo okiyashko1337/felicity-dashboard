@@ -54,6 +54,12 @@ final class SampleBufferRenderer: ObservableObject {
         error = ""
     }
 
+    func beginSeek() {
+        layer.sampleBufferRenderer.flush(removingDisplayedImage: false, completionHandler: nil)
+        isReady = false
+        error = ""
+    }
+
     func removeDisplayedImage() {
         layer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
         isReady = false

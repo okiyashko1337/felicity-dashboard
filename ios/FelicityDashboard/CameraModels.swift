@@ -10,6 +10,8 @@ struct CameraDescriptor: Codable, Hashable, Identifiable, Sendable {
     let subProfile: String
     let mainURI: String
     let subURI: String
+    let mainRecording: String?
+    let subRecording: String?
     let mainWidth: Int
     let mainHeight: Int
     let subWidth: Int
@@ -32,6 +34,11 @@ struct CameraDescriptor: Codable, Hashable, Identifiable, Sendable {
     func encodedSize(for quality: StreamQuality) -> (width: Int, height: Int) {
         if quality == .lq, subWidth > 0, subHeight > 0 { return (subWidth, subHeight) }
         return (max(16, mainWidth), max(16, mainHeight))
+    }
+
+    func recordingToken(for quality: StreamQuality) -> String? {
+        if quality == .lq, let subRecording, !subRecording.isEmpty { return subRecording }
+        return mainRecording.flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

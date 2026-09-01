@@ -12,9 +12,9 @@ Native iPhone and iPad client for the Felicity energy and Ajax camera system.
 The default server is `http://homeassistant.local:8000`. Tap the yin-yang mark
 to change it. The app requests local-network access on first connection.
 
-## Live cameras and events
+## Cameras, events and archive
 
-Version 0.3 includes the first native camera and 3ye event slices:
+Version 0.4 includes the native camera, 3ye event and Profile G archive slices:
 
 - direct ONVIF discovery from the Ajax recorder;
 - direct RTSP-over-TCP H.264/H.265 playback with Apple hardware decoding;
@@ -24,6 +24,12 @@ Version 0.3 includes the first native camera and 3ye event slices:
 - last-frame JPEG continuity while a stream reconnects or changes quality;
 - a lightweight authenticated 3ye event wall with static thumbnails;
 - camera/all-camera scope plus person, vehicle, animal and face filters; and
+- event-to-archive navigation that opens paused on the nearest decodable frame;
+- one persistent replay session with fast seek, play/pause and previous/next;
+- an Ajax activity timeline fetched through `X-Ajax-Metadata-Filter: A`, with
+  plain motion excluded and six seconds of context around AI activity;
+- a real decoded-frame playhead, per-camera LQ/HQ and archive pinch-to-zoom;
+- a 30-minute cross-camera investigation marker and persisted JPEG continuity;
 - automatic IPv4 preference for `.local` Felicity hosts whose advertised IPv6
   address is unreachable.
 
@@ -34,7 +40,6 @@ screen opens the selected camera; tap its name in Live to switch cameras. Open
 the 3ye credentials stored in Keychain; generic motion is deliberately excluded.
 Passwords are stored in Keychain and are never written into the repository.
 
-Profile G Archive and audio follow as separate vertical slices on top of the
-contracts documented in
+Audio follows as the next vertical slice on top of the contracts documented in
 [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md) and the behavioural checklist in
 [`Docs/PORTING_PLAN.md`](Docs/PORTING_PLAN.md).

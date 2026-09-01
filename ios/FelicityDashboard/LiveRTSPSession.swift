@@ -185,7 +185,7 @@ actor LiveRTSPSession {
     }
 }
 
-private enum RTSPError: LocalizedError {
+enum RTSPError: LocalizedError {
     case invalidURI
     case authentication
     case disconnected
@@ -329,7 +329,7 @@ private final class OneShotGate: @unchecked Sendable {
     }
 }
 
-private enum RTSPDigest {
+enum RTSPDigest {
     static func authorization(challenge: String, method: String, uri: String, username: String, password: String) -> String {
         if challenge.lowercased().hasPrefix("basic") {
             return "Basic \(Data("\(username):\(password)".utf8).base64EncodedString())"

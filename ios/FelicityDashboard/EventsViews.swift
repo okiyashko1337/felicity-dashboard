@@ -67,13 +67,17 @@ final class EventsViewModel: ObservableObject {
 struct EventsView: View {
     let configuration: ThreeEyeConfiguration
     let backLabel: String
+    @ObservedObject var repository: CameraRepository
+    @ObservedObject var preferences: CameraPreferences
     @StateObject private var model: EventsViewModel
     @State private var selectedEvent: ThreeEyeEvent?
     @Environment(\.dismiss) private var dismiss
 
-    init(configuration: ThreeEyeConfiguration, cameraName: String?, backLabel: String) {
+    init(configuration: ThreeEyeConfiguration, cameraName: String?, backLabel: String, repository: CameraRepository, preferences: CameraPreferences) {
         self.configuration = configuration
         self.backLabel = backLabel
+        self.repository = repository
+        self.preferences = preferences
         _model = StateObject(wrappedValue: EventsViewModel(configuration: configuration, cameraName: cameraName))
     }
 
@@ -115,8 +119,22 @@ struct EventsView: View {
         .preferredColorScheme(.dark)
         .task { await model.run() }
         .fullScreenCover(item: $selectedEvent) { event in
-            EventBestView(event: event, configuration: configuration)
+            if let camera = camera(for: event) {
+                ArchiveView(camera: camera, event: event, backLabel: "EVENTS", repository: repository, preferences: preferences)
+            }
         }
+    }
+
+    private func camera(for event: ThreeEyeEvent) -> CameraDescriptor? {
+        let wanted = normalized(event.camera)
+        return repository.cameras.first(where: {
+            let name = normalized($0.name), source = normalized($0.sourceToken)
+            return name == wanted || source == wanted || name.contains(wanted) || wanted.contains(name)
+        }) ?? repository.selected
+    }
+
+    private func normalized(_ value: String) -> String {
+        value.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).joined()
     }
 
     @ViewBuilder
@@ -229,37 +247,6 @@ private struct EventCard: View {
         .background(eventCardColor, in: RoundedRectangle(cornerRadius: 14))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.cyan.opacity(0.24), lineWidth: 1))
-    }
-}
-
-private struct EventBestView: View {
-    let event: ThreeEyeEvent
-    let configuration: ThreeEyeConfiguration
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                CameraBarButton(title: "EVENTS", systemImage: "chevron.left") { dismiss() }
-                Text(event.camera)
-                    .font(.headline.bold())
-                    .lineLimit(1)
-                Spacer()
-                Label(event.eventClass.title, systemImage: event.eventClass.systemImage)
-                    .font(.headline.bold())
-                    .foregroundStyle(.cyan)
-                Text(event.capturedAt.map { $0.formatted(date: .abbreviated, time: .standard) } ?? event.capturedAtRaw)
-                    .font(.headline.bold().monospacedDigit())
-            }
-            .padding(12)
-            .frame(minHeight: 66)
-            .background(eventHeaderColor)
-            ThreeEyeImage(url: event.imageURL ?? event.thumbnailURL, configuration: configuration)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.black)
-        }
-        .background(Color.black.ignoresSafeArea())
-        .preferredColorScheme(.dark)
     }
 }
 

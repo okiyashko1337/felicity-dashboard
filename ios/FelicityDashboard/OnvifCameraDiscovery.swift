@@ -3,6 +3,7 @@ import Foundation
 actor OnvifCameraDiscovery {
     private static let deviceNamespace = "http://www.onvif.org/ver10/device/wsdl"
     private static let mediaNamespace = "http://www.onvif.org/ver10/media/wsdl"
+    private static let recordingNamespace = "http://www.onvif.org/ver10/recording/wsdl"
 
     func discover(configuration: RecorderConfiguration) async throws -> [CameraDescriptor] {
         let base = try Self.baseURL(configuration.host)
@@ -19,6 +20,7 @@ actor OnvifCameraDiscovery {
             )
         )
         var mediaEndpoint = Self.serviceEndpoint(services, namespaceFragment: "/media/wsdl")
+        let recordingEndpoint = Self.serviceEndpoint(services, namespaceFragment: "/recording/wsdl")
         if mediaEndpoint == nil {
             let capabilities = try await soap.post(
                 device,
@@ -49,6 +51,24 @@ actor OnvifCameraDiscovery {
         let profiles = Self.parseProfiles(profilesXML)
         guard !profiles.isEmpty else { throw CameraDiscoveryError.noProfiles }
 
+        let recordings: [RecordingInfo]
+        if let recordingEndpoint, let recordingURL = URL(string: recordingEndpoint) {
+            let action = "\(Self.recordingNamespace)/GetRecordings"
+            let xml = try? await soap.post(
+                recordingURL,
+                action: action,
+                body: Self.envelope(
+                    endpoint: recordingURL.absoluteString,
+                    action: action,
+                    namespaces: "xmlns:trc=\"\(Self.recordingNamespace)\"",
+                    body: "<trc:GetRecordings/>"
+                )
+            )
+            recordings = xml.map(Self.parseRecordings) ?? []
+        } else {
+            recordings = []
+        }
+
         var uris: [String: String] = [:]
         await withTaskGroup(of: (String, String).self) { group in
             for profile in profiles {
@@ -62,7 +82,7 @@ actor OnvifCameraDiscovery {
             }
             for await (token, uri) in group { uris[token] = uri }
         }
-        return Self.buildCameras(profiles: profiles, uris: uris, host: base.host ?? configuration.host)
+        return Self.buildCameras(profiles: profiles, uris: uris, recordings: recordings, host: base.host ?? configuration.host)
     }
 
     private static func streamURI(for token: String, endpoint: URL, soap: OnvifSOAPSession) async throws -> String {
@@ -99,6 +119,17 @@ actor OnvifCameraDiscovery {
         let rotation: Int
     }
 
+    private struct RecordingInfo: Sendable {
+        let token: String
+        let name: String
+        let sourceToken: String
+
+        var isSubstream: Bool {
+            let value = "\(token) \(name) \(sourceToken)".lowercased()
+            return value.contains("-sub-r") || value.contains("sub") || value.hasSuffix("_s") || value.contains("secondary")
+        }
+    }
+
     private static func parseProfiles(_ xml: String) -> [MediaProfile] {
         matches(xml, #"<(?:[\w.-]+:)?Profiles\b([^>]*)>(.*?)</(?:[\w.-]+:)?Profiles>"#).compactMap { groups in
             guard groups.count >= 3, let token = attribute(groups[1], "token"), !token.isEmpty else { return nil }
@@ -118,7 +149,21 @@ actor OnvifCameraDiscovery {
         }
     }
 
-    private static func buildCameras(profiles: [MediaProfile], uris: [String: String], host: String) -> [CameraDescriptor] {
+    private static func parseRecordings(_ xml: String) -> [RecordingInfo] {
+        matches(xml, #"<(?:[\w.-]+:)?RecordingItem\b[^>]*>(.*?)</(?:[\w.-]+:)?RecordingItem>"#).compactMap { groups in
+            guard groups.count > 1 else { return nil }
+            let block = groups[1]
+            guard let token = element(block, "RecordingToken"), !token.isEmpty else { return nil }
+            let configuration = element(block, "Configuration") ?? block
+            return RecordingInfo(
+                token: token,
+                name: element(configuration, "Name") ?? "",
+                sourceToken: element(configuration, "SourceId") ?? ""
+            )
+        }
+    }
+
+    private static func buildCameras(profiles: [MediaProfile], uris: [String: String], recordings: [RecordingInfo], host: String) -> [CameraDescriptor] {
         var order: [String] = []
         var grouped: [String: [MediaProfile]] = [:]
         for profile in profiles {
@@ -141,6 +186,8 @@ actor OnvifCameraDiscovery {
                 subProfile: sub?.token ?? "",
                 mainURI: uris[main.token] ?? "",
                 subURI: sub.flatMap { uris[$0.token] } ?? "",
+                mainRecording: recordingToken(in: recordings, source: source, name: name, substream: false),
+                subRecording: recordingToken(in: recordings, source: source, name: name, substream: true),
                 mainWidth: main.width,
                 mainHeight: main.height,
                 subWidth: sub?.width ?? 0,
@@ -150,6 +197,19 @@ actor OnvifCameraDiscovery {
                 isCorridor: corridor
             )
         }
+    }
+
+    private static func recordingToken(in recordings: [RecordingInfo], source: String, name: String, substream: Bool) -> String? {
+        let wantedSource = normalized(source)
+        let wantedName = normalized(name)
+        var fallback: RecordingInfo?
+        for recording in recordings {
+            let haystack = normalized("\(recording.token) \(recording.sourceToken) \(recording.name)")
+            guard haystack.contains(wantedSource) || (!wantedName.isEmpty && haystack.contains(wantedName)) else { continue }
+            if recording.isSubstream == substream { return recording.token }
+            if fallback == nil { fallback = recording }
+        }
+        return fallback?.token
     }
 
     private static func serviceEndpoint(_ xml: String, namespaceFragment: String) -> String? {
@@ -216,7 +276,7 @@ actor OnvifCameraDiscovery {
     private static func decode(_ value: String) -> String { value.replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&gt;", with: ">") }
 }
 
-private final class OnvifSOAPSession: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+final class OnvifSOAPSession: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let username: String
     private let password: String
     private lazy var session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)

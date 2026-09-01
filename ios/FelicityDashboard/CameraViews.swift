@@ -237,6 +237,7 @@ struct LiveCameraView: View {
     @StateObject private var model: LiveCameraViewModel
     @State private var pickerPresented = false
     @State private var eventsPresented = false
+    @State private var archivePresented = false
     @Environment(\.dismiss) private var dismiss
 
     init(camera: CameraDescriptor, repository: CameraRepository, preferences: CameraPreferences) {
@@ -271,8 +272,11 @@ struct LiveCameraView: View {
         }
         .fullScreenCover(isPresented: $eventsPresented) {
             if let configuration = preferences.threeEyeConfiguration {
-                EventsView(configuration: configuration, cameraName: model.camera.name, backLabel: "LIVE")
+                EventsView(configuration: configuration, cameraName: model.camera.name, backLabel: "LIVE", repository: repository, preferences: preferences)
             }
+        }
+        .fullScreenCover(isPresented: $archivePresented) {
+            ArchiveView(camera: model.camera, event: nil, backLabel: "LIVE", repository: repository, preferences: preferences)
         }
     }
 
@@ -283,6 +287,7 @@ struct LiveCameraView: View {
                 streamStatistics
                     .frame(maxWidth: .infinity)
                 qualityAndPrivacy
+                CameraBarButton(title: "ARCHIVE", systemImage: "clock.arrow.circlepath") { archivePresented = true }
                 Text(model.stateLabel)
                     .font(.caption.bold())
                     .foregroundStyle(model.errorMessage == nil ? .green : .orange)
@@ -298,6 +303,7 @@ struct LiveCameraView: View {
                 Spacer(minLength: 0)
                 streamStatistics
                 qualityAndPrivacy
+                CameraBarButton(title: "ARCHIVE", systemImage: "clock.arrow.circlepath") { archivePresented = true }
             }
         }
         .padding(.horizontal, 12)

@@ -63,7 +63,7 @@ struct AppRootView: View {
         }
         .fullScreenCover(isPresented: $eventsPresented) {
             if let configuration = cameraPreferences.threeEyeConfiguration {
-                EventsView(configuration: configuration, cameraName: cameras.selected?.name, backLabel: "ENERGY")
+                EventsView(configuration: configuration, cameraName: cameras.selected?.name, backLabel: "ENERGY", repository: cameras, preferences: cameraPreferences)
             }
         }
     }
@@ -86,7 +86,7 @@ private struct HeaderView: View {
                     .accessibilityLabel("Settings")
             }
             .buttonStyle(.plain)
-            Text("v0.3.0 · iOS")
+            Text("v0.4.0 · iOS")
                 .font(.headline.monospaced())
                 .foregroundStyle(FelicityPalette.accent)
             Spacer()
@@ -294,7 +294,7 @@ private struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section {
-                    LabeledContent("Client", value: "iOS 0.3.0")
+                    LabeledContent("Client", value: "iOS 0.4.0")
                     LabeledContent("Server", value: model.status.version)
                     LabeledContent("Connection", value: model.isLive ? "Live" : "Offline")
                     if !cameraPreferences.saveError.isEmpty {
