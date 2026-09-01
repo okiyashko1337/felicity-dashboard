@@ -91,14 +91,14 @@ final class ArchiveViewModel: ObservableObject {
         playClick()
         let target = snapToRecording ? ArchiveTimelineRules.nearestRecordedTime(to: requested, in: intervals) ?? requested : requested
         seekTask?.cancel()
-        renderer.beginSeek()
+        let frameGeneration = renderer.beginSeek()
         state = .seeking
         seekRequestedAt = .now
         logger.info("Seek requested camera=\(self.camera.name, privacy: .public) target=\(target.timeIntervalSince1970, privacy: .public) autoplay=\(autoplay, privacy: .public)")
         seekTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(45))
             guard !Task.isCancelled, let self else { return }
-            do { try await self.session.seek(to: target, autoplay: autoplay) }
+            do { try await self.session.seek(to: target, autoplay: autoplay, frameGeneration: frameGeneration) }
             catch { await MainActor.run { self.error = error.localizedDescription; self.state = .failed(error.localizedDescription) } }
         }
     }
@@ -190,13 +190,13 @@ final class ArchiveViewModel: ObservableObject {
                 descriptor: descriptor,
                 configuration: preferences.recorderConfiguration,
                 fallbackSize: camera.encodedSize(for: quality),
-                onFrame: { [weak self] unit in
+                onFrame: { [weak self] unit, frameGeneration in
                     Task { @MainActor in
                         guard let self else { return }
-                        self.renderer.enqueue(unit)
+                        guard self.renderer.enqueue(unit, generation: frameGeneration) else { return }
                         guard let time = unit.archiveTime else { return }
-                        for _ in 0..<8 where !self.renderer.isReady { try? await Task.sleep(for: .milliseconds(16)) }
-                        guard self.renderer.isReady else { return }
+                        for _ in 0..<75 where !self.renderer.isReady(for: frameGeneration) { try? await Task.sleep(for: .milliseconds(16)) }
+                        guard self.renderer.isReady(for: frameGeneration) else { return }
                         self.acceptDecodedTime(time)
                         if let began = self.seekRequestedAt {
                             self.logger.info("First decoded archive frame camera=\(self.camera.name, privacy: .public) actual=\(time.timeIntervalSince1970, privacy: .public) latency_ms=\(Int(Date().timeIntervalSince(began) * 1000), privacy: .public)")

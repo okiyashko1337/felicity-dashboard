@@ -132,6 +132,15 @@ final class DashboardModelsTests: XCTestCase {
         XCTAssertEqual(ArchiveTimelineRules.nearestRecordedTime(to: origin.addingTimeInterval(24), in: intervals), origin.addingTimeInterval(30))
     }
 
+    func testRenderGenerationRejectsFramesFromPreviousSeek() {
+        var gate = RenderGenerationGate()
+        let first = gate.advance()
+        XCTAssertTrue(gate.accepts(first))
+        let second = gate.advance()
+        XCTAssertFalse(gate.accepts(first))
+        XCTAssertTrue(gate.accepts(second))
+    }
+
     private func rtp(sequence: UInt16, timestamp: UInt32, marker: Bool, payload: [UInt8]) -> Data {
         var bytes: [UInt8] = [0x80, marker ? 0xe0 : 0x60]
         bytes += [UInt8(sequence >> 8), UInt8(sequence & 0xff)]

@@ -113,19 +113,19 @@ struct AppRootView: View {
                 descriptor: descriptor,
                 configuration: cameraPreferences.recorderConfiguration,
                 fallbackSize: camera.encodedSize(for: quality),
-                onFrame: { unit in probe.accept(unit) },
+                onFrame: { unit, _ in probe.accept(unit) },
                 onStatistics: { _ in },
                 onState: { value in probe.accept(value) }
             )
             archiveSelfTestTrace("OPEN camera=\(camera.name) format=\(format.width)x\(format.height) \(format.codecName) target=\(target.timeIntervalSince1970)")
-            try await session.seek(to: target, autoplay: false)
+            try await session.seek(to: target, autoplay: false, frameGeneration: 1)
             try? await Task.sleep(for: .seconds(5))
             let paused = probe.snapshot
             archiveSelfTestTrace("PAUSED \(paused.summary)")
             guard paused.frames > 0, paused.keyframes > 0, paused.state == .paused else {
                 throw ArchiveSelfTestError.noPausedKeyframe
             }
-            try await session.seek(to: target, autoplay: true)
+            try await session.seek(to: target, autoplay: true, frameGeneration: 2)
             try? await Task.sleep(for: .seconds(3))
             let playing = probe.snapshot
             archiveSelfTestTrace("PLAYING \(playing.summary)")
@@ -218,7 +218,7 @@ private struct HeaderView: View {
                     .accessibilityLabel("Settings")
             }
             .buttonStyle(.plain)
-            Text("v0.4.1 · iOS")
+            Text("v0.4.2 · iOS")
                 .font(.headline.monospaced())
                 .foregroundStyle(FelicityPalette.accent)
             Spacer()
@@ -358,7 +358,7 @@ private struct EnergyDetailView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let portrait = proxy.size.height > proxy.size.width
+            let compactSummary = proxy.size.width < 620
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Button { dismiss() } label: { Label("ENERGY", systemImage: "chevron.left") }
@@ -367,28 +367,28 @@ private struct EnergyDetailView: View {
                         .font(.title2.bold())
                         .foregroundStyle(FelicityPalette.accent)
                     Spacer()
-                    Text(primaryValue)
-                        .font((portrait ? Font.title2 : Font.largeTitle).bold().monospacedDigit())
-                        .foregroundStyle(FelicityPalette.primary)
                 }
                 .padding(.horizontal, 18)
                 .frame(minHeight: 68)
                 .background(FelicityPalette.header)
 
-                Group {
-                    if portrait {
-                        VStack(spacing: 14) {
+                VStack(spacing: 14) {
+                    if compactSummary {
+                        VStack(spacing: 10) {
+                            primaryFact
+                                .frame(height: 92)
                             facts
-                                .frame(height: 108)
-                            EnergyChartView(metric: metric, chart: model.chart, loading: model.isLoadingChart, error: model.chartError)
+                                .frame(height: 96)
                         }
                     } else {
                         HStack(spacing: 14) {
+                            primaryFact
+                                .frame(width: min(300, proxy.size.width * 0.25))
                             facts
-                                .frame(width: min(350, proxy.size.width * 0.29))
-                            EnergyChartView(metric: metric, chart: model.chart, loading: model.isLoadingChart, error: model.chartError)
                         }
+                        .frame(height: min(142, max(116, proxy.size.height * 0.2)))
                     }
+                    EnergyChartView(metric: metric, chart: model.chart, loading: model.isLoadingChart, error: model.chartError)
                 }
                 .padding(16)
             }
@@ -402,6 +402,22 @@ private struct EnergyDetailView: View {
                 try? await Task.sleep(for: metric == .system ? .seconds(10) : .seconds(60))
             }
         }
+    }
+
+    private var primaryFact: some View {
+        VStack(spacing: 8) {
+            Text("CURRENT")
+                .font(.caption.bold())
+                .foregroundStyle(FelicityPalette.accent)
+            Text(primaryValue)
+                .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                .minimumScaleFactor(0.55)
+                .lineLimit(1)
+                .foregroundStyle(FelicityPalette.primary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(FelicityPalette.card, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(FelicityPalette.accent.opacity(0.48), lineWidth: 1.5))
     }
 
     private var facts: some View {
@@ -618,7 +634,7 @@ private struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section {
-                    LabeledContent("Client", value: "iOS 0.4.1")
+                    LabeledContent("Client", value: "iOS 0.4.2")
                     LabeledContent("Server", value: model.status.version)
                     LabeledContent("Connection", value: model.isLive ? "Live" : "Offline")
                     if !cameraPreferences.saveError.isEmpty {

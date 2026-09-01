@@ -2,6 +2,17 @@ import AVFoundation
 import CoreImage
 import SwiftUI
 
+struct RenderGenerationGate {
+    private(set) var current: UInt64 = 0
+
+    mutating func advance() -> UInt64 {
+        current &+= 1
+        return current
+    }
+
+    func accepts(_ generation: UInt64) -> Bool { generation == current }
+}
+
 @MainActor
 final class SampleBufferRenderer: ObservableObject {
     let layer = AVSampleBufferDisplayLayer()
@@ -11,6 +22,12 @@ final class SampleBufferRenderer: ObservableObject {
     private var streamFormat: VideoStreamFormat?
     private var formatDescription: CMVideoFormatDescription?
     private var discoveredParameterSets: [Int: Data] = [:]
+    private var generations = RenderGenerationGate()
+    private var flushingGeneration: UInt64?
+    private var readyGeneration: UInt64?
+    private var pendingUnits: [VideoAccessUnit] = []
+    private var displayedPixelAddressBeforeSeek: UnsafeMutableRawPointer?
+    private var readinessTask: Task<Void, Never>?
 
     init() {
         layer.videoGravity = .resizeAspect
@@ -27,6 +44,25 @@ final class SampleBufferRenderer: ObservableObject {
     }
 
     func enqueue(_ unit: VideoAccessUnit) {
+        _ = enqueue(unit, generation: generations.current)
+    }
+
+    @discardableResult
+    func enqueue(_ unit: VideoAccessUnit, generation: UInt64) -> Bool {
+        guard generations.accepts(generation) else { return false }
+        if flushingGeneration == generation {
+            // A seek flush is asynchronous. Retain only this generation's short
+            // lead-in so no access unit from the previous position can cross it.
+            pendingUnits.append(unit)
+            if pendingUnits.count > 90 { pendingUnits.removeFirst(pendingUnits.count - 90) }
+            return true
+        }
+        enqueueNow(unit, generation: generation)
+        return true
+    }
+
+    private func enqueueNow(_ unit: VideoAccessUnit, generation: UInt64) {
+        guard generations.accepts(generation) else { return }
         guard let streamFormat else { return }
         let nals = Self.annexBNALUnits(unit.annexB)
         for nal in nals { registerParameterSet(nal, isHEVC: streamFormat.isHEVC) }
@@ -37,32 +73,53 @@ final class SampleBufferRenderer: ObservableObject {
         }
         guard layer.sampleBufferRenderer.isReadyForMoreMediaData else { return }
         layer.sampleBufferRenderer.enqueue(sample)
-        if !isReady {
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(30))
-                guard let self else { return }
-                if #available(iOS 17.4, *) { self.isReady = self.layer.isReadyForDisplay }
-                else { self.isReady = self.layer.sampleBufferRenderer.status != .failed }
-            }
-        }
+        monitorReadiness(for: generation)
     }
 
     func flush() {
-        layer.sampleBufferRenderer.flush(removingDisplayedImage: false, completionHandler: nil)
+        readinessTask?.cancel()
+        readinessTask = nil
+        displayedPixelAddressBeforeSeek = displayedPixelAddress()
+        let generation = generations.advance()
+        pendingUnits.removeAll(keepingCapacity: true)
+        flushingGeneration = generation
+        readyGeneration = nil
         formatDescription = nil
         isReady = false
         error = ""
+        flushLayer(removingDisplayedImage: false, generation: generation)
     }
 
-    func beginSeek() {
-        layer.sampleBufferRenderer.flush(removingDisplayedImage: false, completionHandler: nil)
-        isReady = false
+    @discardableResult
+    func beginSeek() -> UInt64 {
+        readinessTask?.cancel()
+        readinessTask = nil
+        displayedPixelAddressBeforeSeek = displayedPixelAddress()
+        let generation = generations.advance()
+        pendingUnits.removeAll(keepingCapacity: true)
+        flushingGeneration = generation
+        readyGeneration = nil
+        // Keep the one already displayed frame stable until the new keyframe is
+        // decoded. In particular, do not reveal the old event poster on every seek.
         error = ""
+        flushLayer(removingDisplayedImage: false, generation: generation)
+        return generation
+    }
+
+    func isReady(for generation: UInt64) -> Bool {
+        generations.accepts(generation) && readyGeneration == generation
     }
 
     func removeDisplayedImage() {
-        layer.sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
+        readinessTask?.cancel()
+        readinessTask = nil
+        displayedPixelAddressBeforeSeek = nil
+        let generation = generations.advance()
+        pendingUnits.removeAll(keepingCapacity: true)
+        flushingGeneration = generation
+        readyGeneration = nil
         isReady = false
+        flushLayer(removingDisplayedImage: true, generation: generation)
     }
 
     func snapshotJPEG(quality: CGFloat = 0.84) -> Data? {
@@ -79,6 +136,50 @@ final class SampleBufferRenderer: ObservableObject {
         let type = isHEVC ? Int((first >> 1) & 0x3f) : Int(first & 0x1f)
         if isHEVC, [32, 33, 34].contains(type) { discoveredParameterSets[type] = value }
         if !isHEVC, [7, 8].contains(type) { discoveredParameterSets[type] = value }
+    }
+
+    private func flushLayer(removingDisplayedImage: Bool, generation: UInt64) {
+        layer.sampleBufferRenderer.flush(removingDisplayedImage: removingDisplayedImage) { [weak self] in
+            Task { @MainActor in self?.finishFlush(generation: generation) }
+        }
+    }
+
+    private func finishFlush(generation: UInt64) {
+        guard generations.accepts(generation), flushingGeneration == generation else { return }
+        flushingGeneration = nil
+        let queued = pendingUnits
+        pendingUnits.removeAll(keepingCapacity: true)
+        for unit in queued { enqueueNow(unit, generation: generation) }
+    }
+
+    private func monitorReadiness(for generation: UInt64) {
+        guard readyGeneration != generation, readinessTask == nil else { return }
+        readinessTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for _ in 0..<75 {
+                try? await Task.sleep(for: .milliseconds(16))
+                guard !Task.isCancelled, self.generations.accepts(generation) else { return }
+                let ready: Bool
+                if #available(iOS 17.4, *) {
+                    let address = self.displayedPixelAddress()
+                    ready = self.layer.isReadyForDisplay && address != nil && address != self.displayedPixelAddressBeforeSeek
+                } else {
+                    ready = self.layer.sampleBufferRenderer.status != .failed
+                }
+                if ready {
+                    self.readyGeneration = generation
+                    self.isReady = true
+                    self.readinessTask = nil
+                    return
+                }
+            }
+            self.readinessTask = nil
+        }
+    }
+
+    private func displayedPixelAddress() -> UnsafeMutableRawPointer? {
+        guard #available(iOS 17.4, *), let pixel = layer.sampleBufferRenderer.displayedPixelBuffer() else { return nil }
+        return Unmanaged.passUnretained(pixel).toOpaque()
     }
 
     private func rebuildFormatDescriptionIfPossible() {

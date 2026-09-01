@@ -11,7 +11,7 @@ enum ArchivePlaybackState: Equatable, Sendable {
 }
 
 actor ArchiveRTSPSession {
-    typealias FrameHandler = @Sendable (VideoAccessUnit) -> Void
+    typealias FrameHandler = @Sendable (VideoAccessUnit, UInt64) -> Void
     typealias StatisticsHandler = @Sendable (LiveStreamStatistics) -> Void
     typealias StateHandler = @Sendable (ArchivePlaybackState) -> Void
 
@@ -99,7 +99,7 @@ actor ArchiveRTSPSession {
         return description.format
     }
 
-    func seek(to target: Date, autoplay: Bool) async throws {
+    func seek(to target: Date, autoplay: Bool, frameGeneration: UInt64) async throws {
         guard !sessionID.isEmpty else { throw RTSPError.disconnected }
         generation += 1
         let seekGeneration = generation
@@ -110,7 +110,7 @@ actor ArchiveRTSPSession {
         playAnchorDate = nil
         playAnchorRTP = nil
         depacketizer = RTPDepacketizer(isHEVC: isHEVC) { [weak self] unit in
-            Task { await self?.accept(unit, generation: seekGeneration) }
+            Task { await self?.accept(unit, generation: seekGeneration, frameGeneration: frameGeneration) }
         }
         resetStatistics()
         setState(.seeking)
@@ -183,14 +183,14 @@ actor ArchiveRTSPSession {
         publishStatisticsIfNeeded()
     }
 
-    private func accept(_ unit: VideoAccessUnit, generation unitGeneration: Int) async {
+    private func accept(_ unit: VideoAccessUnit, generation unitGeneration: Int, frameGeneration: UInt64) async {
         guard acceptingFrames, unitGeneration == generation else { return }
         if waitingForKeyframe {
             guard unit.isKeyframe else { return }
             waitingForKeyframe = false
             trace("First replay keyframe actual=\(unit.archiveTime?.timeIntervalSince1970 ?? 0) requested=\(requestedTarget.timeIntervalSince1970)")
         }
-        onFrame?(unit)
+        onFrame?(unit, frameGeneration)
         if pauseAfterFirstFrame {
             acceptingFrames = false
             let response = try? await authorized("PAUSE", target: uri, headers: ["Session: \(sessionID)", "Require: onvif-replay"])
