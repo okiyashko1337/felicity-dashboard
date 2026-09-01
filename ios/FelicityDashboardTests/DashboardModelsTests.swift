@@ -149,6 +149,38 @@ final class DashboardModelsTests: XCTestCase {
         XCTAssertEqual(ArchiveTimelineRules.nearestRecordedTime(to: origin.addingTimeInterval(24), in: intervals), origin.addingTimeInterval(30))
     }
 
+    func testTimelinePinchKeepsFingerAnchorStable() throws {
+        let day = Date(timeIntervalSince1970: 86_400)
+        let start = day.addingTimeInterval(6 * 3_600)
+        let zoomed = ArchiveTimelineRules.zoomedViewport(
+            baseStart: start,
+            baseSpan: 12 * 3_600,
+            magnification: 2,
+            anchorRatio: 0.25,
+            dayStart: day
+        )
+        XCTAssertEqual(zoomed.span, 6 * 3_600)
+        XCTAssertEqual(zoomed.start, day.addingTimeInterval(7.5 * 3_600))
+        let oldAnchor = start.addingTimeInterval(3 * 3_600)
+        let newAnchor = zoomed.start.addingTimeInterval(zoomed.span * 0.25)
+        XCTAssertEqual(oldAnchor, newAnchor)
+    }
+
+    func testTimelineZoomClampsToFifteenMinutesAndFullDay() throws {
+        let day = Date(timeIntervalSince1970: 86_400)
+        let zoomedIn = ArchiveTimelineRules.zoomedViewport(
+            baseStart: day.addingTimeInterval(12 * 3_600), baseSpan: 3_600,
+            magnification: 100, anchorRatio: 0.5, dayStart: day
+        )
+        XCTAssertEqual(zoomedIn.span, 15 * 60)
+        let zoomedOut = ArchiveTimelineRules.zoomedViewport(
+            baseStart: zoomedIn.start, baseSpan: zoomedIn.span,
+            magnification: 0.001, anchorRatio: 0.5, dayStart: day
+        )
+        XCTAssertEqual(zoomedOut.span, 24 * 3_600)
+        XCTAssertEqual(zoomedOut.start, day)
+    }
+
     func testPlaybackStopsAtAIEndAndAdvancesOverArchiveGap() throws {
         let origin = Date(timeIntervalSince1970: 10_000)
         let intervals = [

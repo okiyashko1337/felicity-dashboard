@@ -178,6 +178,25 @@ final class ArchiveViewModel: ObservableObject {
         visibleStart = min(max(dayStart, visibleStart.addingTimeInterval(seconds)), dayEnd.addingTimeInterval(-visibleSpan))
     }
 
+    func zoomTimeline(
+        from baseStart: Date,
+        span baseSpan: TimeInterval,
+        magnification: Double,
+        anchorRatio: Double
+    ) {
+        let anchor = baseStart.addingTimeInterval(baseSpan * min(1, max(0, anchorRatio)))
+        let dayStart = Calendar.current.startOfDay(for: anchor)
+        let viewport = ArchiveTimelineRules.zoomedViewport(
+            baseStart: baseStart,
+            baseSpan: baseSpan,
+            magnification: magnification,
+            anchorRatio: anchorRatio,
+            dayStart: dayStart
+        )
+        visibleStart = viewport.start
+        visibleSpan = viewport.span
+    }
+
     private func initialTarget() async -> Date {
         if let captured = entryEvent?.capturedAt { return captured }
         if let marker = ArchiveMarkerStore.shared.value() { return marker }
@@ -536,6 +555,9 @@ private struct ArchiveVideoCanvas: View {
 
 private struct ArchiveTimelineView: View {
     @ObservedObject var model: ArchiveViewModel
+    @State private var pinchBaseStart: Date?
+    @State private var pinchBaseSpan: TimeInterval?
+    @State private var suppressDrag = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -562,12 +584,35 @@ private struct ArchiveTimelineView: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onEnded { value in
+                        guard !suppressDrag else { return }
                         if abs(value.translation.width) > 10 {
                             model.panTimeline(seconds: -Double(value.translation.width / width) * model.visibleSpan)
                         } else {
                             let ratio = min(1, max(0, value.location.x / width))
                             model.seek(to: model.visibleStart.addingTimeInterval(Double(ratio) * model.visibleSpan))
                         }
+                    }
+            )
+            .simultaneousGesture(
+                MagnifyGesture()
+                    .onChanged { value in
+                        if pinchBaseStart == nil {
+                            pinchBaseStart = model.visibleStart
+                            pinchBaseSpan = model.visibleSpan
+                        }
+                        suppressDrag = true
+                        guard let baseStart = pinchBaseStart, let baseSpan = pinchBaseSpan else { return }
+                        model.zoomTimeline(
+                            from: baseStart,
+                            span: baseSpan,
+                            magnification: Double(value.magnification),
+                            anchorRatio: Double(value.startAnchor.x)
+                        )
+                    }
+                    .onEnded { _ in
+                        pinchBaseStart = nil
+                        pinchBaseSpan = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { suppressDrag = false }
                     }
             )
         }

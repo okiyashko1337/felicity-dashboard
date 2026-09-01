@@ -66,6 +66,8 @@ struct ArchiveInterval: Identifiable, Equatable, Sendable {
 enum ArchiveTimelineRules {
     static let context: TimeInterval = 6
     static let markerTTL: TimeInterval = 30 * 60
+    static let minimumVisibleSpan: TimeInterval = 15 * 60
+    static let maximumVisibleSpan: TimeInterval = 24 * 60 * 60
 
     static func intervals(from boundaries: [ArchiveActivityBoundary]) -> [ArchiveInterval] {
         var opened: [ArchiveActivityKind: Date] = [:]
@@ -130,6 +132,22 @@ enum ArchiveTimelineRules {
         if eventCount <= 18 { return 12 * 60 * 60 }
         if eventCount <= 48 { return 6 * 60 * 60 }
         return 3 * 60 * 60
+    }
+
+    static func zoomedViewport(
+        baseStart: Date,
+        baseSpan: TimeInterval,
+        magnification: Double,
+        anchorRatio: Double,
+        dayStart: Date
+    ) -> (start: Date, span: TimeInterval) {
+        let safeMagnification = max(0.01, magnification)
+        let span = min(maximumVisibleSpan, max(minimumVisibleSpan, baseSpan / safeMagnification))
+        let ratio = min(1, max(0, anchorRatio))
+        let anchor = baseStart.addingTimeInterval(baseSpan * ratio)
+        let proposed = anchor.addingTimeInterval(-span * ratio)
+        let latest = dayStart.addingTimeInterval(maximumVisibleSpan - span)
+        return (min(max(dayStart, proposed), latest), span)
     }
 
     private static func merge(_ source: [ArchiveInterval]) -> [ArchiveInterval] {
