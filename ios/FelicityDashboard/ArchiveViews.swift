@@ -17,6 +17,7 @@ final class ArchiveViewModel: ObservableObject {
     @Published private(set) var visibleStart = Calendar.current.startOfDay(for: .now)
     @Published private(set) var visibleSpan: TimeInterval = 24 * 60 * 60
     @Published private(set) var isLoadingTimeline = false
+    @Published private(set) var recordingDays: [Date] = []
 
     let renderer = SampleBufferRenderer()
 
@@ -65,6 +66,7 @@ final class ArchiveViewModel: ObservableObject {
         currentTime = target
         ArchiveMarkerStore.shared.set(target)
         await loadPoster()
+        Task { await loadRecordingDays() }
         await openSession(at: target)
     }
 
@@ -242,6 +244,7 @@ final class ArchiveViewModel: ObservableObject {
                     combined.sort { $0.start < $1.start }
                 }
                 self.intervals = combined
+                if !combined.isEmpty { self.addRecordingDay(start) }
                 self.visibleSpan = ArchiveTimelineRules.adaptiveSpan(eventCount: combined.count)
                 self.centerTimeline(on: target, dayStart: start, dayEnd: end)
                 self.isLoadingTimeline = false
@@ -258,6 +261,26 @@ final class ArchiveViewModel: ObservableObject {
     private func centerTimeline(on target: Date, dayStart: Date, dayEnd: Date) {
         let proposed = target.addingTimeInterval(-visibleSpan / 2)
         visibleStart = min(max(dayStart, proposed), dayEnd.addingTimeInterval(-visibleSpan))
+    }
+
+    private func loadRecordingDays() async {
+        guard let threeEye else { return }
+        guard let events = try? await ThreeEyeAPI().events(
+            configuration: threeEye,
+            camera: camera.name,
+            classes: Set(ThreeEyeEventClass.allCases),
+            limit: 200
+        ) else { return }
+        for event in events {
+            if let time = event.capturedAt { addRecordingDay(Calendar.current.startOfDay(for: time)) }
+        }
+    }
+
+    private func addRecordingDay(_ day: Date) {
+        let normalized = Calendar.current.startOfDay(for: day)
+        guard !recordingDays.contains(where: { Calendar.current.isDate($0, inSameDayAs: normalized) }) else { return }
+        recordingDays.append(normalized)
+        recordingDays.sort(by: >)
     }
 
     private func acceptDecodedTime(_ time: Date) {
@@ -330,6 +353,27 @@ struct ArchiveView: View {
         .sheet(isPresented: $calendarPresented) {
             VStack(spacing: 18) {
                 Text("RECORDING DATE").font(.headline.bold())
+                if !model.recordingDays.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(model.recordingDays, id: \.self) { day in
+                                Button {
+                                    model.chooseDay(day)
+                                    calendarPresented = false
+                                } label: {
+                                    VStack(spacing: 2) {
+                                        Text(day, format: .dateTime.weekday(.abbreviated))
+                                        Text(day, format: .dateTime.day().month(.abbreviated))
+                                    }
+                                    .font(.caption.bold())
+                                    .padding(.horizontal, 14)
+                                    .frame(minHeight: 50)
+                                }
+                                .buttonStyle(HeaderButtonStyle())
+                            }
+                        }
+                    }
+                }
                 DatePicker("Date", selection: Binding(get: { model.currentTime ?? .now }, set: { model.chooseDay($0); calendarPresented = false }), displayedComponents: .date)
                     .datePickerStyle(.graphical)
             }
