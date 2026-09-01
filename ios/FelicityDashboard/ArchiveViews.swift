@@ -31,6 +31,9 @@ final class ArchiveViewModel: ObservableObject {
     private var timelineTask: Task<Void, Never>?
     private var started = false
     private var seekRequestedAt: Date?
+    private var playbackRequestedTime: Date?
+    private var playbackKeyframeLead: TimeInterval = 0
+    private var activePlaybackEnd: Date?
     private let logger = Logger(subsystem: "io.github.homedashboard.ios", category: "Archive")
 
     init(
@@ -81,15 +84,28 @@ final class ArchiveViewModel: ObservableObject {
     func togglePlayback() {
         playClick()
         if isPlaying {
+            playbackRequestedTime = nil
+            playbackKeyframeLead = 0
+            activePlaybackEnd = nil
+            state = .paused
+            statistics = .init(kbps: 0, fps: 0)
             Task { await session.pause() }
         } else if let currentTime {
-            seek(to: currentTime, autoplay: true, snapToRecording: false)
+            seek(to: currentTime, autoplay: true, snapToRecording: false, keyframeLead: 10)
         }
     }
 
-    func seek(to requested: Date, autoplay: Bool = false, snapToRecording: Bool = true) {
+    func seek(
+        to requested: Date,
+        autoplay: Bool = false,
+        snapToRecording: Bool = true,
+        keyframeLead: TimeInterval = 0
+    ) {
         playClick()
         let target = snapToRecording ? ArchiveTimelineRules.nearestRecordedTime(to: requested, in: intervals) ?? requested : requested
+        playbackRequestedTime = autoplay ? target : nil
+        playbackKeyframeLead = autoplay ? keyframeLead : 0
+        activePlaybackEnd = autoplay ? ArchiveTimelineRules.playbackEnd(for: target, in: intervals, keyframeLead: keyframeLead) : nil
         seekTask?.cancel()
         let frameGeneration = renderer.beginSeek()
         state = .seeking
@@ -247,12 +263,14 @@ final class ArchiveViewModel: ObservableObject {
                 self.visibleSpan = ArchiveTimelineRules.adaptiveSpan(eventCount: combined.count)
                 self.centerTimeline(on: target, dayStart: start, dayEnd: end)
                 self.isLoadingTimeline = false
+                self.refreshPlaybackBoundary()
             } catch {
                 guard !Task.isCancelled else { return }
                 self.isLoadingTimeline = false
                 if self.error.isEmpty { self.error = error.localizedDescription }
                 self.visibleSpan = 24 * 60 * 60
                 self.visibleStart = start
+                if self.state == .playing { self.pauseAtCurrentFrame() }
             }
         }
     }
@@ -295,6 +313,42 @@ final class ArchiveViewModel: ObservableObject {
             let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
             centerTimeline(on: time, dayStart: dayStart, dayEnd: dayEnd)
         }
+        advancePlaybackIfNeeded(at: time)
+    }
+
+    private func refreshPlaybackBoundary() {
+        guard isPlaying || playbackRequestedTime != nil else { return }
+        let target = playbackRequestedTime ?? currentTime ?? .distantPast
+        activePlaybackEnd = ArchiveTimelineRules.playbackEnd(for: target, in: intervals, keyframeLead: playbackKeyframeLead)
+        guard let currentTime else { return }
+        advancePlaybackIfNeeded(at: currentTime)
+    }
+
+    private func advancePlaybackIfNeeded(at time: Date) {
+        guard state == .playing else { return }
+        guard let end = activePlaybackEnd else {
+            // Metadata has finished loading and did not identify an AI interval.
+            // Do not let the recorder's ordinary motion archive leak into playback.
+            if !isLoadingTimeline { pauseAtCurrentFrame() }
+            return
+        }
+        guard time >= end else { return }
+        if let next = ArchiveTimelineRules.nextPlaybackStart(after: end, in: intervals) {
+            logger.info("AI segment complete camera=\(self.camera.name, privacy: .public) next=\(next.timeIntervalSince1970, privacy: .public)")
+            seek(to: next, autoplay: true, snapToRecording: false)
+        } else {
+            logger.info("AI segment complete camera=\(self.camera.name, privacy: .public) no_next_segment")
+            pauseAtCurrentFrame()
+        }
+    }
+
+    private func pauseAtCurrentFrame() {
+        playbackRequestedTime = nil
+        playbackKeyframeLead = 0
+        activePlaybackEnd = nil
+        state = .paused
+        statistics = .init(kbps: 0, fps: 0)
+        Task { await session.pause() }
     }
 
     private func playClick() {

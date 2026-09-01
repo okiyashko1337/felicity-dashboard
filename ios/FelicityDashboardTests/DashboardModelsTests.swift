@@ -132,6 +132,34 @@ final class DashboardModelsTests: XCTestCase {
         XCTAssertEqual(ArchiveTimelineRules.nearestRecordedTime(to: origin.addingTimeInterval(24), in: intervals), origin.addingTimeInterval(30))
     }
 
+    func testPlaybackStopsAtAIEndAndAdvancesOverArchiveGap() throws {
+        let origin = Date(timeIntervalSince1970: 10_000)
+        let intervals = [
+            ArchiveInterval(kind: .person, start: origin, end: origin.addingTimeInterval(10)),
+            ArchiveInterval(kind: .animal, start: origin.addingTimeInterval(30), end: origin.addingTimeInterval(40)),
+        ]
+        XCTAssertEqual(ArchiveTimelineRules.playbackEnd(for: origin.addingTimeInterval(4), in: intervals), origin.addingTimeInterval(10))
+        XCTAssertEqual(ArchiveTimelineRules.nextPlaybackStart(after: origin.addingTimeInterval(10), in: intervals), origin.addingTimeInterval(30))
+        XCTAssertNil(ArchiveTimelineRules.playbackEnd(for: origin.addingTimeInterval(22), in: intervals))
+    }
+
+    func testPlaybackCoverageMergesOverlappingAIClasses() throws {
+        let origin = Date(timeIntervalSince1970: 20_000)
+        let intervals = [
+            ArchiveInterval(kind: .person, start: origin, end: origin.addingTimeInterval(12)),
+            ArchiveInterval(kind: .vehicle, start: origin.addingTimeInterval(8), end: origin.addingTimeInterval(20)),
+        ]
+        XCTAssertEqual(ArchiveTimelineRules.playbackEnd(for: origin.addingTimeInterval(5), in: intervals), origin.addingTimeInterval(20))
+        XCTAssertNil(ArchiveTimelineRules.nextPlaybackStart(after: origin.addingTimeInterval(20), in: intervals))
+    }
+
+    func testPlaybackAcceptsNearestKeyframeLeadButNotUnrelatedMotionGap() throws {
+        let origin = Date(timeIntervalSince1970: 30_000)
+        let intervals = [ArchiveInterval(kind: .person, start: origin, end: origin.addingTimeInterval(10))]
+        XCTAssertEqual(ArchiveTimelineRules.playbackEnd(for: origin.addingTimeInterval(-6), in: intervals, keyframeLead: 10), origin.addingTimeInterval(10))
+        XCTAssertNil(ArchiveTimelineRules.playbackEnd(for: origin.addingTimeInterval(-11), in: intervals, keyframeLead: 10))
+    }
+
     func testRenderGenerationRejectsFramesFromPreviousSeek() {
         var gate = RenderGenerationGate()
         let first = gate.advance()

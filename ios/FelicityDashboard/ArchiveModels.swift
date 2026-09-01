@@ -94,6 +94,25 @@ enum ArchiveTimelineRules {
         return best
     }
 
+    /// Returns the end of the continuous AI-covered segment selected for playback.
+    /// A replay server may return a keyframe just before the requested boundary, so
+    /// tolerate a short lead-in while still refusing unrelated archive motion.
+    static func playbackEnd(
+        for target: Date,
+        in intervals: [ArchiveInterval],
+        keyframeLead: TimeInterval = 0
+    ) -> Date? {
+        let coverage = mergedCoverage(intervals)
+        guard let selected = coverage.first(where: {
+            target >= $0.start.addingTimeInterval(-keyframeLead) && target <= $0.end
+        }) else { return nil }
+        return selected.end
+    }
+
+    static func nextPlaybackStart(after time: Date, in intervals: [ArchiveInterval]) -> Date? {
+        mergedCoverage(intervals).first(where: { $0.start > time.addingTimeInterval(0.5) })?.start
+    }
+
     static func adaptiveSpan(eventCount: Int) -> TimeInterval {
         if eventCount <= 6 { return 24 * 60 * 60 }
         if eventCount <= 18 { return 12 * 60 * 60 }
@@ -109,6 +128,18 @@ enum ArchiveTimelineRules {
                 continue
             }
             result[result.count - 1] = .init(kind: previous.kind, start: previous.start, end: max(previous.end, interval.end))
+        }
+        return result
+    }
+
+    private static func mergedCoverage(_ source: [ArchiveInterval]) -> [(start: Date, end: Date)] {
+        var result: [(start: Date, end: Date)] = []
+        for interval in source.sorted(by: { $0.start < $1.start }) {
+            guard let previous = result.last, interval.start <= previous.end else {
+                result.append((interval.start, interval.end))
+                continue
+            }
+            result[result.count - 1] = (previous.start, max(previous.end, interval.end))
         }
         return result
     }
