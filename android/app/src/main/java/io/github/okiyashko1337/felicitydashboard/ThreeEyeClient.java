@@ -33,7 +33,7 @@ final class ThreeEyeClient {
             if(state.includeUncertain)path.append("&include_uncertain=true");
             JSONArray source=json(path.toString()).getJSONArray("objects");
             java.util.ArrayList<ThreeEyeState.Event> next=new java.util.ArrayList<>();
-            for(int i=0;i<source.length();i++){JSONObject o=source.getJSONObject(i);ThreeEyeState.Event e=new ThreeEyeState.Event();e.trackId=o.optLong("track_id");e.objectClass=o.optString("object_class","object");e.capturedAt=bestViewTime(o);e.camera=o.optString("camera_name","—");e.externalTrack=o.optString("external_track_id","—");e.confidence=o.optDouble("confidence");e.verification=o.optString("verification_status","confirmed");e.groupMembers=o.optInt("group_member_count",1);e.groupCameras=o.optInt("group_camera_count",1);e.thumbnailUrl=absolute(o.optString("thumbnail_url"));e.imageUrl=absolute(o.optString("image_url"));e.thumbnail=images.get(e.thumbnailUrl);next.add(e);}
+            for(int i=0;i<source.length();i++){JSONObject o=source.getJSONObject(i);ThreeEyeState.Event e=new ThreeEyeState.Event();e.trackId=o.optLong("track_id");e.objectClass=o.optString("object_class","object");e.capturedAt=bestViewTime(o);e.firstSeen=first(o,"first_seen_utc","group_first_seen_utc",e.capturedAt);e.lastSeen=first(o,"last_seen_utc","group_last_seen_utc",e.capturedAt);e.camera=o.optString("camera_name","—");e.externalTrack=o.optString("external_track_id","—");e.confidence=o.optDouble("confidence");e.verification=o.optString("verification_status","confirmed");e.groupMembers=o.optInt("group_member_count",1);e.groupCameras=o.optInt("group_camera_count",1);e.thumbnailUrl=absolute(o.optString("thumbnail_url"));e.imageUrl=absolute(o.optString("image_url"));e.thumbnail=images.get(e.thumbnailUrl);next.add(e);}
             synchronized(state){long selectedId=state.selected() == null?-1:state.selected().trackId;state.events.clear();state.events.addAll(next);state.selected=-1;for(int i=0;i<next.size();i++)if(next.get(i).trackId==selectedId)state.selected=i;state.updatedMs=System.currentTimeMillis();state.status="LIVE";state.error="";}
             if(state.loadThumbnails)for(int i=0;i<Math.min(18,next.size());i++){ThreeEyeState.Event e=next.get(i);if(e.thumbnail==null){try{e.thumbnail=bitmap(e.thumbnailUrl,320);if(e.thumbnail!=null)images.put(e.thumbnailUrl,e.thumbnail);}catch(Exception ignored){}}}
             callback.done(true,null);
@@ -47,6 +47,7 @@ final class ThreeEyeClient {
     private static String trim(String value){String v=value==null?"":value.trim();while(v.endsWith("/"))v=v.substring(0,v.length()-1);return v;}
     private static String enc(String value)throws Exception{return URLEncoder.encode(value,"UTF-8");}
     static String bestViewTime(JSONObject object){return bestViewTime(object.optString("captured_at_utc",""),object.optString("group_last_seen_utc",""));}
+    private static String first(JSONObject object,String primary,String secondary,String fallback){String value=object.optString(primary,"").trim();if(value.isEmpty())value=object.optString(secondary,"").trim();return value.isEmpty()?fallback:value;}
     static String bestViewTime(String capturedAt,String groupLastSeen){
         String captured=capturedAt==null?"":capturedAt.trim();
         return captured.isEmpty()?(groupLastSeen==null?"":groupLastSeen.trim()):captured;

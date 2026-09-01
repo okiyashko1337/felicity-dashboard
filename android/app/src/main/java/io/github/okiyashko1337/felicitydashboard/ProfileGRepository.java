@@ -3,12 +3,14 @@ package io.github.okiyashko1337.felicitydashboard;
 import android.content.SharedPreferences;
 import android.util.Log;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
 
 final class ProfileGRepository {
+    private static final long ACTIVITY_CONTEXT_MS=6_000;
     static final class Replay {
         final String uri,user,password,recordingName;
         Replay(String uri,String user,String password,String recordingName){this.uri=uri;this.user=user;this.password=password;this.recordingName=recordingName;}
@@ -17,9 +19,10 @@ final class ProfileGRepository {
     private static ProfileGClient.ProbeResult catalog;
     private static Boolean metadataSearch;
     private static final Map<String,String> replayUris=new HashMap<>();
+    private static final Map<String,List<ProfileGClient.SearchEvent>> activityRanges=new HashMap<>();
     private ProfileGRepository(){}
 
-    static synchronized void set(String valueHost,String valueUser,String valuePassword,ProfileGClient.ProbeResult valueCatalog){if(!valueHost.equals(host)||!valueUser.equals(user)||!valuePassword.equals(password)){replayUris.clear();metadataSearch=null;}host=valueHost;user=valueUser;password=valuePassword;catalog=valueCatalog;}
+    static synchronized void set(String valueHost,String valueUser,String valuePassword,ProfileGClient.ProbeResult valueCatalog){if(!valueHost.equals(host)||!valueUser.equals(user)||!valuePassword.equals(password)){replayUris.clear();activityRanges.clear();metadataSearch=null;}host=valueHost;user=valueUser;password=valuePassword;catalog=valueCatalog;}
 
     private static boolean probeMetadataSearch(ProfileGClient client,String endpoint){synchronized(ProfileGRepository.class){if(metadataSearch!=null)return metadataSearch;}try{boolean supported=client.supportsMetadataSearch(endpoint);synchronized(ProfileGRepository.class){metadataSearch=supported;}return supported;}catch(Exception error){Log.w("FelicityProfileG","Metadata search capability unavailable · "+error.getMessage());synchronized(ProfileGRepository.class){metadataSearch=false;}return false;}}
 
@@ -34,8 +37,42 @@ final class ProfileGRepository {
     }
 
     static List<ProfileGClient.SearchEvent> events(SharedPreferences prefs,String camera,long start,long end,boolean substream)throws Exception{
-        String currentHost=prefs.getString("profile_g_host","192.168.13.234:8080"),currentUser=prefs.getString("profile_g_user",""),currentPassword=prefs.getString("profile_g_password","");ProfileGClient client=new ProfileGClient(currentHost,currentUser,currentPassword);String directEndpoint="http://"+currentHost+"/onvif/search_service";probeMetadataSearch(client,directEndpoint);Log.i("FelicityProfileG","Semantic archive timeline uses the 3ye index; replay metadata enrichment is off by default");return Collections.emptyList();
+        if(end<=start)return Collections.emptyList();Replay replay=replay(prefs,camera,substream);String key=replay.uri+"|"+start+"|"+end; synchronized(ProfileGRepository.class){List<ProfileGClient.SearchEvent> cached=activityRanges.get(key);if(cached!=null)return new ArrayList<>(cached);}
+        long began=android.os.SystemClock.elapsedRealtime();List<AjaxMetadataDecoder.Activity> activities=new AjaxActivityClient(replay.uri,replay.user,replay.password).fetch(start,end);ArrayList<ProfileGClient.SearchEvent> loaded=new ArrayList<>();
+        loaded.addAll(activityIntervals(activities));
+        synchronized(ProfileGRepository.class){if(activityRanges.size()>31)activityRanges.clear();activityRanges.put(key,new ArrayList<>(loaded));}Log.i("FelicityProfileG","Ajax activities · camera="+camera+" · events="+loaded.size()+" · "+(android.os.SystemClock.elapsedRealtime()-began)+" ms");return loaded;
     }
+
+    static List<ProfileGClient.SearchEvent> activityIntervals(List<AjaxMetadataDecoder.Activity> activities){
+        ArrayList<ProfileGClient.SearchEvent> result=new ArrayList<>();Map<String,Long> opened=new HashMap<>();
+        for(AjaxMetadataDecoder.Activity activity:activities)for(String type:activity.types()){
+            if(type.isEmpty()||"motion".equals(type))continue;
+            if(!activity.asserted){Long abandoned=opened.put(type,activity.timeMs);if(abandoned!=null)warn("Unclosed Ajax "+type+" activity · "+new java.util.Date(abandoned)+" · replaced at "+new java.util.Date(activity.timeMs));continue;}
+            Long start=opened.remove(type);
+            if(start!=null&&activity.timeMs>start&&activity.timeMs-start<=10*60_000)addInterval(result,Math.max(0,start-ACTIVITY_CONTEXT_MS),activity.timeMs+ACTIVITY_CONTEXT_MS,type);
+            else if("ring".equals(type))addInterval(result,Math.max(0,activity.timeMs-ACTIVITY_CONTEXT_MS),activity.timeMs+ACTIVITY_CONTEXT_MS,type);
+        }
+        for(Map.Entry<String,Long> entry:opened.entrySet())warn("Unclosed Ajax "+entry.getKey()+" activity · "+new java.util.Date(entry.getValue()));Collections.sort(result,(left,right)->Long.compare(left.time,right.time));return result;
+    }
+
+    /**
+     * Snaps a timeline press to the nearest point covered by an AI recording.
+     * A press in a gap is compared with the end of the earlier interval and the
+     * start of the later one. Ties deliberately prefer the earlier recording.
+     */
+    static long nearestActivityTime(List<ProfileGClient.SearchEvent> events,long target,long dayStart,long dayEnd){
+        long best=target,distance=Long.MAX_VALUE;
+        for(ProfileGClient.SearchEvent event:events){
+            if(event==null||event.type==null||event.type.toLowerCase(Locale.US).contains("motion")||event.time<dayStart||event.time>=dayEnd)continue;
+            long end=Math.max(event.time,event.endTime),candidate=target<event.time?event.time:target>end?end:target,next=Math.abs(candidate-target);
+            if(next<distance||(next==distance&&candidate<best)){distance=next;best=candidate;}
+        }
+        return best;
+    }
+
+    private static void addInterval(List<ProfileGClient.SearchEvent> result,long start,long end,String type){for(ProfileGClient.SearchEvent existing:result)if(existing.type.equals(type)&&Math.abs(existing.time-start)<=250)return;result.add(new ProfileGClient.SearchEvent(start,type,end));}
+    private static void warn(String value){try{Log.w("FelicityActivity",value);}catch(RuntimeException ignored){}}
+
 
     static ProfileGClient.Recording find(ProfileGClient.ProbeResult source,String camera){
         return find(source,camera,false);

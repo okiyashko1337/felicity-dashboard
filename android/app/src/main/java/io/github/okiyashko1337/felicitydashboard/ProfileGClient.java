@@ -50,8 +50,9 @@ final class ProfileGClient {
         boolean substream(){String value=(token+" "+name).toLowerCase(Locale.US);return value.endsWith("-sub")||value.contains(" sub")||value.endsWith("_s")||value.contains("secondary");}
     }
     static final class SearchEvent {
-        final long time;final String type;
-        SearchEvent(long time,String type){this.time=time;this.type=type;}
+        final long time,endTime;final String type;
+        SearchEvent(long time,String type){this(time,type,0);}
+        SearchEvent(long time,String type,long endTime){this.time=time;this.type=type;this.endTime=endTime;}
     }
 
     ProfileGClient(String host,String user,String password){this.host=host;this.user=user;this.password=password;}

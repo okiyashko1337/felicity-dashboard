@@ -10,7 +10,7 @@ final class ThreeEyeState {
     }
     static final class Event {
         long trackId;
-        String objectClass="object", capturedAt="", camera="—", externalTrack="—";
+        String objectClass="object", capturedAt="", firstSeen="", lastSeen="", camera="—", externalTrack="—";
         String verification="confirmed", thumbnailUrl="", imageUrl="";
         double confidence;
         int groupMembers=1, groupCameras=1;
