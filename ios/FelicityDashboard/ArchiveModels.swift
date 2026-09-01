@@ -27,6 +27,18 @@ enum ArchiveActivityKind: String, CaseIterable, Codable, Hashable, Sendable {
         }
     }
 
+    /// Matches Android's draw order for combined Ajax activity masks. Later
+    /// classes are painted above earlier ones on the single compact timeline.
+    var timelineLayer: Int {
+        switch self {
+        case .person: return 0
+        case .face: return 1
+        case .animal: return 2
+        case .vehicle: return 3
+        case .ring: return 4
+        }
+    }
+
     init?(_ eventClass: ThreeEyeEventClass) {
         switch eventClass {
         case .person: self = .person
@@ -122,14 +134,26 @@ enum ArchiveTimelineRules {
 
     private static func merge(_ source: [ArchiveInterval]) -> [ArchiveInterval] {
         var result: [ArchiveInterval] = []
-        for interval in source {
-            guard let previous = result.last, previous.kind == interval.kind, interval.start <= previous.end else {
-                result.append(interval)
-                continue
+        let grouped = Dictionary(grouping: source, by: \.kind)
+        for kind in ArchiveActivityKind.allCases {
+            var mergedKind: [ArchiveInterval] = []
+            for interval in grouped[kind, default: []].sorted(by: { $0.start < $1.start }) {
+                guard let previous = mergedKind.last, interval.start <= previous.end else {
+                    mergedKind.append(interval)
+                    continue
+                }
+                mergedKind[mergedKind.count - 1] = .init(
+                    kind: kind,
+                    start: previous.start,
+                    end: max(previous.end, interval.end)
+                )
             }
-            result[result.count - 1] = .init(kind: previous.kind, start: previous.start, end: max(previous.end, interval.end))
+            result.append(contentsOf: mergedKind)
         }
-        return result
+        return result.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            return $0.kind.timelineLayer < $1.kind.timelineLayer
+        }
     }
 
     private static func mergedCoverage(_ source: [ArchiveInterval]) -> [(start: Date, end: Date)] {

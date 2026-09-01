@@ -104,6 +104,23 @@ final class DashboardModelsTests: XCTestCase {
         XCTAssertEqual(intervals[0].end.timeIntervalSince1970, Double(endUS) / 1_000_000 + 6, accuracy: 0.001)
     }
 
+    func testCombinedPersonVehicleMaskPaintsVehicleAbovePerson() throws {
+        let startUS: UInt64 = 1_788_244_800_000_000
+        let endUS = startUS + 4_000_000
+        let started = protoMessage([
+            protoVarint(1, startUS),
+            protoBytes(3, protoMessage([protoBytes(5, protoMessage([protoVarint(1, 10)])), protoVarint(101, 0)])),
+        ])
+        let ended = protoMessage([
+            protoVarint(1, endUS),
+            protoBytes(3, protoMessage([protoBytes(5, protoMessage([protoVarint(1, 10)])), protoVarint(101, 1)])),
+        ])
+        let batch = protoMessage([protoBytes(1, Data("A".utf8)), protoBytes(2, started), protoBytes(2, ended)])
+        let intervals = ArchiveTimelineRules.intervals(from: AjaxActivityDecoder.decode(batch))
+        XCTAssertEqual(intervals.map(\.kind), [.person, .vehicle])
+        XCTAssertGreaterThan(ArchiveActivityKind.vehicle.timelineLayer, ArchiveActivityKind.person.timelineLayer)
+    }
+
     func testReplayClockReadsAjaxNTPHeaderExtension() throws {
         let unix: UInt32 = 1_788_244_800
         let ntp = UInt64(unix) + 2_208_988_800
