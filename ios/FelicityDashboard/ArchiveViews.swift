@@ -18,6 +18,7 @@ final class ArchiveViewModel: ObservableObject {
     @Published private(set) var visibleSpan: TimeInterval = 24 * 60 * 60
     @Published private(set) var isLoadingTimeline = false
     @Published private(set) var recordingDays: [Date] = []
+    @Published private(set) var isLoadingCalendar = false
 
     let renderer = SampleBufferRenderer()
 
@@ -29,11 +30,18 @@ final class ArchiveViewModel: ObservableObject {
     private let activityClient = OnvifActivityClient()
     private var seekTask: Task<Void, Never>?
     private var timelineTask: Task<Void, Never>?
+    private var calendarTask: Task<Void, Never>?
     private var started = false
     private var seekRequestedAt: Date?
     private var playbackRequestedTime: Date?
     private var playbackKeyframeLead: TimeInterval = 0
     private var activePlaybackEnd: Date?
+    private var loadedTimelineStart: Date?
+    private var loadedTimelineEnd: Date?
+    private var requestedTimelineStart: Date?
+    private var requestedTimelineEnd: Date?
+    private var loadedCalendarMonths = Set<Date>()
+    private var requestedCalendarMonth: Date?
     private let logger = Logger(subsystem: "io.github.homedashboard.ios", category: "Archive")
 
     init(
@@ -77,6 +85,7 @@ final class ArchiveViewModel: ObservableObject {
         started = false
         seekTask?.cancel()
         timelineTask?.cancel()
+        calendarTask?.cancel()
         if let jpeg = renderer.snapshotJPEG() { await CameraPreviewStore.shared.save(jpeg, for: camera) }
         await session.close()
     }
@@ -93,6 +102,7 @@ final class ArchiveViewModel: ObservableObject {
         } else if let target = ArchiveTimelineRules.preferredPlaybackTarget(
             currentTime: currentTime,
             visibleStart: visibleStart,
+            visibleSpan: visibleSpan,
             intervals: intervals,
             keyframeLead: 10
         ) {
@@ -145,9 +155,11 @@ final class ArchiveViewModel: ObservableObject {
         await session.close()
         quality = quality == .lq ? .hq : .lq
         repository.setPreferredQuality(quality, for: camera)
+        resetTimelineCache(clearCalendar: true)
         format = nil
         statistics = .init(kbps: 0, fps: 0)
         renderer.flush()
+        Task { await loadRecordingDays() }
         await openSession(at: target)
     }
 
@@ -161,10 +173,11 @@ final class ArchiveViewModel: ObservableObject {
         quality = repository.preferredQuality(for: camera, compactDisplay: UIScreen.main.bounds.width < 700)
         entryEvent = nil
         format = nil
-        intervals = []
+        resetTimelineCache(clearCalendar: true)
         poster = nil
         renderer.flush()
         if let cached = await CameraPreviewStore.shared.data(for: camera) { poster = UIImage(data: cached) }
+        Task { await loadRecordingDays() }
         await openSession(at: target)
     }
 
@@ -177,10 +190,53 @@ final class ArchiveViewModel: ObservableObject {
         loadTimeline(around: target)
     }
 
+    var selectedTimelineDay: Date {
+        Calendar.current.startOfDay(for: visibleStart.addingTimeInterval(visibleSpan / 2))
+    }
+
+    func hasRecording(on day: Date) -> Bool {
+        recordingDays.contains { Calendar.current.isDate($0, inSameDayAs: day) }
+    }
+
+    func loadCalendarMonth(containing date: Date) {
+        let calendar = Calendar.current
+        guard let month = calendar.dateInterval(of: .month, for: date)?.start,
+              let end = calendar.date(byAdding: .month, value: 1, to: month),
+              !loadedCalendarMonths.contains(month),
+              requestedCalendarMonth != month else { return }
+        calendarTask?.cancel()
+        requestedCalendarMonth = month
+        isLoadingCalendar = true
+        calendarTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let loaded = try await self.activityClient.fetch(
+                    camera: self.camera,
+                    quality: self.quality,
+                    configuration: self.preferences.recorderConfiguration,
+                    start: month,
+                    end: end
+                )
+                guard !Task.isCancelled else { return }
+                self.addRecordingDays(from: loaded)
+                self.loadedCalendarMonths.insert(month)
+                self.requestedCalendarMonth = nil
+                self.isLoadingCalendar = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.requestedCalendarMonth = nil
+                self.isLoadingCalendar = false
+            }
+        }
+    }
+
     func panTimeline(seconds: TimeInterval) {
-        let dayStart = Calendar.current.startOfDay(for: currentTime ?? visibleStart)
-        let dayEnd = dayStart.addingTimeInterval(24 * 60 * 60)
-        visibleStart = min(max(dayStart, visibleStart.addingTimeInterval(seconds)), dayEnd.addingTimeInterval(-visibleSpan))
+        panTimeline(from: visibleStart, seconds: seconds)
+    }
+
+    func panTimeline(from baseStart: Date, seconds: TimeInterval) {
+        visibleStart = clampedToPresent(baseStart.addingTimeInterval(seconds), span: visibleSpan)
+        ensureTimelineCoverage()
     }
 
     func zoomTimeline(
@@ -189,17 +245,15 @@ final class ArchiveViewModel: ObservableObject {
         magnification: Double,
         anchorRatio: Double
     ) {
-        let anchor = baseStart.addingTimeInterval(baseSpan * min(1, max(0, anchorRatio)))
-        let dayStart = Calendar.current.startOfDay(for: anchor)
-        let viewport = ArchiveTimelineRules.zoomedViewport(
+        let viewport = ArchiveTimelineRules.zoomedContinuousViewport(
             baseStart: baseStart,
             baseSpan: baseSpan,
             magnification: magnification,
-            anchorRatio: anchorRatio,
-            dayStart: dayStart
+            anchorRatio: anchorRatio
         )
-        visibleStart = viewport.start
+        visibleStart = clampedToPresent(viewport.start, span: viewport.span)
         visibleSpan = viewport.span
+        ensureTimelineCoverage()
     }
 
     private func initialTarget() async -> Date {
@@ -257,10 +311,53 @@ final class ArchiveViewModel: ObservableObject {
     }
 
     private func loadTimeline(around target: Date) {
-        timelineTask?.cancel()
+        requestTimelineWindow(centeredOn: target, recenterOn: target)
+    }
+
+    private func ensureTimelineCoverage() {
+        let center = visibleStart.addingTimeInterval(visibleSpan / 2)
+        if ArchiveTimelineRules.cachedTimelineCovers(
+            visibleStart: visibleStart,
+            visibleSpan: visibleSpan,
+            loadedStart: loadedTimelineStart,
+            loadedEnd: loadedTimelineEnd
+        ) {
+            if requestedTimelineStart != nil,
+               !ArchiveTimelineRules.cachedTimelineCovers(
+                   visibleStart: visibleStart,
+                   visibleSpan: visibleSpan,
+                   loadedStart: requestedTimelineStart,
+                   loadedEnd: requestedTimelineEnd
+               ) {
+                timelineTask?.cancel()
+                requestedTimelineStart = nil
+                requestedTimelineEnd = nil
+                isLoadingTimeline = false
+            }
+            return
+        }
+        requestTimelineWindow(centeredOn: center, recenterOn: nil)
+    }
+
+    private func requestTimelineWindow(centeredOn center: Date, recenterOn target: Date?) {
         let calendar = Calendar.current
-        let start = calendar.startOfDay(for: target)
-        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(24 * 60 * 60)
+        let window = ArchiveTimelineRules.cachedTimelineWindow(centeredOn: center, calendar: calendar)
+        let start = window.start
+        let end = window.end
+        if let loadedTimelineStart, let loadedTimelineEnd, start >= loadedTimelineStart, end <= loadedTimelineEnd {
+            if let target {
+                let targetDay = calendar.startOfDay(for: target)
+                let targetEnd = calendar.date(byAdding: .day, value: 1, to: targetDay) ?? targetDay.addingTimeInterval(24 * 60 * 60)
+                let count = intervals.filter { $0.end >= targetDay && $0.start < targetEnd }.count
+                visibleSpan = ArchiveTimelineRules.adaptiveSpan(eventCount: count)
+                centerTimeline(on: target, dayStart: targetDay, dayEnd: targetEnd)
+            }
+            return
+        }
+        if requestedTimelineStart == start, requestedTimelineEnd == end { return }
+        timelineTask?.cancel()
+        requestedTimelineStart = start
+        requestedTimelineEnd = end
         isLoadingTimeline = true
         timelineTask = Task { [weak self] in
             guard let self else { return }
@@ -277,24 +374,37 @@ final class ArchiveViewModel: ObservableObject {
                 if let threeEye = self.threeEye,
                    let faces = try? await ThreeEyeAPI().events(configuration: threeEye, camera: self.camera.name, classes: [.face], limit: 200) {
                     combined.append(contentsOf: faces.compactMap { event in
-                        guard let time = event.capturedAt else { return nil }
+                        guard let time = event.capturedAt, time >= start, time < end else { return nil }
                         return ArchiveInterval(kind: .face, start: time.addingTimeInterval(-ArchiveTimelineRules.context), end: time.addingTimeInterval(ArchiveTimelineRules.context))
                     })
                     combined.sort { $0.start < $1.start }
                 }
                 self.intervals = combined
-                if !combined.isEmpty { self.addRecordingDay(start) }
-                self.visibleSpan = ArchiveTimelineRules.adaptiveSpan(eventCount: combined.count)
-                self.centerTimeline(on: target, dayStart: start, dayEnd: end)
+                self.loadedTimelineStart = start
+                self.loadedTimelineEnd = end
+                self.requestedTimelineStart = nil
+                self.requestedTimelineEnd = nil
+                self.addRecordingDays(from: combined)
+                if let target {
+                    let targetDay = calendar.startOfDay(for: target)
+                    let targetEnd = calendar.date(byAdding: .day, value: 1, to: targetDay) ?? targetDay.addingTimeInterval(24 * 60 * 60)
+                    let count = combined.filter { $0.end >= targetDay && $0.start < targetEnd }.count
+                    self.visibleSpan = ArchiveTimelineRules.adaptiveSpan(eventCount: count)
+                    self.centerTimeline(on: target, dayStart: targetDay, dayEnd: targetEnd)
+                }
                 self.isLoadingTimeline = false
                 self.refreshPlaybackBoundary()
             } catch {
                 guard !Task.isCancelled else { return }
+                self.requestedTimelineStart = nil
+                self.requestedTimelineEnd = nil
                 self.isLoadingTimeline = false
                 if self.error.isEmpty { self.error = error.localizedDescription }
-                self.visibleSpan = 24 * 60 * 60
-                self.visibleStart = start
-                if self.state == .playing { self.pauseAtCurrentFrame() }
+                if self.intervals.isEmpty {
+                    self.visibleSpan = 24 * 60 * 60
+                    self.visibleStart = calendar.startOfDay(for: target ?? center)
+                    if self.state == .playing { self.pauseAtCurrentFrame() }
+                }
             }
         }
     }
@@ -305,15 +415,23 @@ final class ArchiveViewModel: ObservableObject {
     }
 
     private func loadRecordingDays() async {
-        guard let threeEye else { return }
-        guard let events = try? await ThreeEyeAPI().events(
-            configuration: threeEye,
-            camera: camera.name,
-            classes: Set(ThreeEyeEventClass.allCases),
-            limit: 200
-        ) else { return }
-        for event in events {
-            if let time = event.capturedAt { addRecordingDay(Calendar.current.startOfDay(for: time)) }
+        if let threeEye,
+           let events = try? await ThreeEyeAPI().events(
+               configuration: threeEye,
+               camera: camera.name,
+               classes: Set(ThreeEyeEventClass.allCases),
+               limit: 200
+           ) {
+            for event in events {
+                if let time = event.capturedAt { addRecordingDay(Calendar.current.startOfDay(for: time)) }
+            }
+        }
+    }
+
+    private func addRecordingDays(from values: [ArchiveInterval]) {
+        for interval in values {
+            let midpoint = interval.start.addingTimeInterval(interval.end.timeIntervalSince(interval.start) / 2)
+            addRecordingDay(midpoint)
         }
     }
 
@@ -324,6 +442,29 @@ final class ArchiveViewModel: ObservableObject {
         recordingDays.sort(by: >)
     }
 
+    private func resetTimelineCache(clearCalendar: Bool) {
+        timelineTask?.cancel()
+        isLoadingTimeline = false
+        requestedTimelineStart = nil
+        requestedTimelineEnd = nil
+        loadedTimelineStart = nil
+        loadedTimelineEnd = nil
+        intervals = []
+        if clearCalendar {
+            calendarTask?.cancel()
+            isLoadingCalendar = false
+            requestedCalendarMonth = nil
+            loadedCalendarMonths.removeAll()
+            recordingDays = []
+        }
+    }
+
+    private func clampedToPresent(_ proposed: Date, span: TimeInterval) -> Date {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now)) ?? Date().addingTimeInterval(24 * 60 * 60)
+        return min(proposed, tomorrow.addingTimeInterval(-span))
+    }
+
     private func acceptDecodedTime(_ time: Date) {
         let calendar = Calendar.current
         if state == .playing, let currentTime, time < currentTime { return }
@@ -331,11 +472,11 @@ final class ArchiveViewModel: ObservableObject {
         currentTime = time
         ArchiveMarkerStore.shared.set(time)
         let dayStart = calendar.startOfDay(for: time)
-        if previousDay != nil, previousDay != dayStart {
-            loadTimeline(around: time)
-        } else if time < visibleStart || time > visibleStart.addingTimeInterval(visibleSpan) {
-            let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
-            centerTimeline(on: time, dayStart: dayStart, dayEnd: dayEnd)
+        if time < visibleStart || time > visibleStart.addingTimeInterval(visibleSpan) {
+            visibleStart = clampedToPresent(time.addingTimeInterval(-visibleSpan / 2), span: visibleSpan)
+            ensureTimelineCoverage()
+        } else if previousDay != nil, previousDay != dayStart {
+            ensureTimelineCoverage()
         }
         advancePlaybackIfNeeded(at: time)
     }
@@ -436,33 +577,10 @@ struct ArchiveView: View {
             LiveCameraView(camera: model.camera, repository: repository, preferences: preferences)
         }
         .sheet(isPresented: $calendarPresented) {
-            VStack(spacing: 18) {
-                Text("RECORDING DATE").font(.headline.bold())
-                if !model.recordingDays.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(model.recordingDays, id: \.self) { day in
-                                Button {
-                                    model.chooseDay(day)
-                                    calendarPresented = false
-                                } label: {
-                                    VStack(spacing: 2) {
-                                        Text(day, format: .dateTime.weekday(.abbreviated))
-                                        Text(day, format: .dateTime.day().month(.abbreviated))
-                                    }
-                                    .font(.caption.bold())
-                                    .padding(.horizontal, 14)
-                                    .frame(minHeight: 50)
-                                }
-                                .buttonStyle(HeaderButtonStyle())
-                            }
-                        }
-                    }
-                }
-                DatePicker("Date", selection: Binding(get: { model.currentTime ?? .now }, set: { model.chooseDay($0); calendarPresented = false }), displayedComponents: .date)
-                    .datePickerStyle(.graphical)
+            ArchiveCalendarPicker(model: model) { day in
+                model.chooseDay(day)
+                calendarPresented = false
             }
-            .padding(24)
             .presentationDetents([.medium, .large])
         }
     }
@@ -537,6 +655,105 @@ struct ArchiveView: View {
     }
 }
 
+private struct ArchiveCalendarPicker: View {
+    @ObservedObject var model: ArchiveViewModel
+    let select: (Date) -> Void
+    @State private var month: Date
+    private let calendar = Calendar.current
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+
+    init(model: ArchiveViewModel, select: @escaping (Date) -> Void) {
+        self.model = model
+        self.select = select
+        let selected = model.selectedTimelineDay
+        _month = State(initialValue: Calendar.current.dateInterval(of: .month, for: selected)?.start ?? selected)
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            HStack {
+                Button { changeMonth(-1) } label: { Image(systemName: "chevron.left") }
+                Spacer()
+                Text(month, format: .dateTime.month(.wide).year())
+                    .font(.headline.bold())
+                if model.isLoadingCalendar { ProgressView().controlSize(.small).padding(.leading, 6) }
+                Spacer()
+                Button { changeMonth(1) } label: { Image(systemName: "chevron.right") }
+                    .disabled(!canAdvance)
+            }
+            .buttonStyle(HeaderButtonStyle())
+
+            LazyVGrid(columns: columns, spacing: 5) {
+                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                    Text(symbol).font(.caption2.bold()).foregroundStyle(.secondary).frame(height: 20)
+                }
+                ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                    if let day {
+                        Button { select(day) } label: {
+                            VStack(spacing: 3) {
+                                Text(day, format: .dateTime.day())
+                                    .font(.subheadline.bold().monospacedDigit())
+                                Circle()
+                                    .fill(model.hasRecording(on: day) ? FelicityPalette.accent : .clear)
+                                    .frame(width: 6, height: 6)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 38)
+                            .foregroundStyle(isSelected(day) ? Color.black : Color.primary)
+                            .background(isSelected(day) ? FelicityPalette.accent : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+                            .overlay {
+                                if calendar.isDateInToday(day) {
+                                    RoundedRectangle(cornerRadius: 10).stroke(FelicityPalette.accent.opacity(0.75), lineWidth: 1)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(day > Date())
+                        .opacity(day > Date() ? 0.28 : 1)
+                        .accessibilityLabel(day.formatted(date: .complete, time: .omitted))
+                        .accessibilityValue(model.hasRecording(on: day) ? "Recordings" : "No recordings")
+                    } else {
+                        Color.clear.frame(height: 38)
+                    }
+                }
+            }
+            Text("•  ONVIF RECORDINGS")
+                .font(.caption2.bold())
+                .foregroundStyle(FelicityPalette.accent)
+        }
+        .padding(22)
+        .onAppear { model.loadCalendarMonth(containing: month) }
+        .onChange(of: month) { model.loadCalendarMonth(containing: $0) }
+    }
+
+    private var weekdaySymbols: [String] {
+        let source = calendar.veryShortStandaloneWeekdaySymbols
+        return (0..<7).map { source[(calendar.firstWeekday - 1 + $0) % 7] }
+    }
+
+    private var days: [Date?] {
+        guard let interval = calendar.dateInterval(of: .month, for: month),
+              let count = calendar.range(of: .day, in: .month, for: month)?.count else { return [] }
+        let weekday = calendar.component(.weekday, from: interval.start)
+        let leading = (weekday - calendar.firstWeekday + 7) % 7
+        return Array(repeating: nil, count: leading) + (0..<count).map {
+            calendar.date(byAdding: .day, value: $0, to: interval.start)
+        }
+    }
+
+    private var canAdvance: Bool {
+        guard let next = calendar.date(byAdding: .month, value: 1, to: month) else { return false }
+        return next <= (calendar.dateInterval(of: .month, for: .now)?.start ?? .now)
+    }
+
+    private func isSelected(_ day: Date) -> Bool {
+        calendar.isDate(day, inSameDayAs: model.selectedTimelineDay)
+    }
+
+    private func changeMonth(_ value: Int) {
+        if let next = calendar.date(byAdding: .month, value: value, to: month) { month = next }
+    }
+}
+
 private struct ArchiveVideoCanvas: View {
     @ObservedObject var renderer: SampleBufferRenderer
     let camera: CameraDescriptor
@@ -563,6 +780,7 @@ private struct ArchiveTimelineView: View {
     @State private var pinchBaseStart: Date?
     @State private var pinchBaseSpan: TimeInterval?
     @State private var suppressDrag = false
+    @State private var dragBaseStart: Date?
 
     var body: some View {
         GeometryReader { proxy in
@@ -618,10 +836,18 @@ private struct ArchiveTimelineView: View {
 
     private func dragGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard !suppressDrag else { return }
+                if dragBaseStart == nil { dragBaseStart = model.visibleStart }
+                guard abs(value.translation.width) > 4, let base = dragBaseStart else { return }
+                model.panTimeline(from: base, seconds: -Double(value.translation.width / width) * model.visibleSpan)
+            }
             .onEnded { value in
+                let base = dragBaseStart ?? model.visibleStart
+                dragBaseStart = nil
                 guard !suppressDrag else { return }
                 if abs(value.translation.width) > 10 {
-                    model.panTimeline(seconds: -Double(value.translation.width / width) * model.visibleSpan)
+                    model.panTimeline(from: base, seconds: -Double(value.translation.width / width) * model.visibleSpan)
                 } else {
                     let ratio = min(1, max(0, value.location.x / width))
                     model.seek(to: model.visibleStart.addingTimeInterval(Double(ratio) * model.visibleSpan))
@@ -647,14 +873,22 @@ private struct ArchiveTimelineView: View {
 
     @ViewBuilder private func tickMarks(width: CGFloat) -> some View {
         let count = model.visibleSpan <= 3 * 3600 ? 7 : model.visibleSpan <= 6 * 3600 ? 7 : 9
+        let visibleEnd = model.visibleStart.addingTimeInterval(model.visibleSpan)
+        let crossesMidnight = !Calendar.current.isDate(model.visibleStart, inSameDayAs: visibleEnd)
         ForEach(0..<count, id: \.self) { index in
             let ratio = CGFloat(index) / CGFloat(max(1, count - 1))
             let date = model.visibleStart.addingTimeInterval(Double(ratio) * model.visibleSpan)
             VStack(spacing: 4) {
                 Rectangle().fill(Color.white.opacity(0.55)).frame(width: 1, height: index % 2 == 0 ? 18 : 10)
-                Text(date, format: .dateTime.hour().minute())
-                    .font(.caption2.bold().monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.75))
+                if crossesMidnight {
+                    Text(date, format: .dateTime.day().month(.abbreviated).hour().minute())
+                        .font(.caption2.bold().monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.75))
+                } else {
+                    Text(date, format: .dateTime.hour().minute())
+                        .font(.caption2.bold().monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.75))
+                }
             }
             .position(x: width * ratio, y: 86)
         }

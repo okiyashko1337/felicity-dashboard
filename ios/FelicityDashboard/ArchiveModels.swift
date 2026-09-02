@@ -68,6 +68,7 @@ enum ArchiveTimelineRules {
     static let markerTTL: TimeInterval = 30 * 60
     static let minimumVisibleSpan: TimeInterval = 15 * 60
     static let maximumVisibleSpan: TimeInterval = 24 * 60 * 60
+    static let timelineCacheDays = 3
 
     static func intervals(from boundaries: [ArchiveActivityBoundary]) -> [ArchiveInterval] {
         var opened: [ArchiveActivityKind: Date] = [:]
@@ -114,20 +115,23 @@ enum ArchiveTimelineRules {
     static func preferredPlaybackTarget(
         currentTime: Date?,
         visibleStart: Date,
+        visibleSpan: TimeInterval,
         intervals: [ArchiveInterval],
         keyframeLead: TimeInterval = 0,
         calendar: Calendar = .current
     ) -> Date? {
         guard !intervals.isEmpty else { return nil }
-        let dayStart = calendar.startOfDay(for: visibleStart)
         if let currentTime,
-           calendar.isDate(currentTime, inSameDayAs: dayStart),
+           currentTime >= visibleStart,
+           currentTime <= visibleStart.addingTimeInterval(visibleSpan),
            playbackEnd(for: currentTime, in: intervals, keyframeLead: keyframeLead) != nil {
             return currentTime
         }
-        let reference = currentTime ?? dayStart
+        let focus = visibleStart.addingTimeInterval(visibleSpan / 2)
+        let dayStart = calendar.startOfDay(for: focus)
+        let reference = currentTime ?? focus
         let clock = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: reference)
-        let requested = calendar.date(byAdding: clock, to: dayStart) ?? dayStart
+        let requested = calendar.date(byAdding: clock, to: dayStart) ?? focus
         return nearestRecordedTime(to: requested, in: intervals)
     }
 
@@ -171,6 +175,41 @@ enum ArchiveTimelineRules {
         let proposed = anchor.addingTimeInterval(-span * ratio)
         let latest = dayStart.addingTimeInterval(maximumVisibleSpan - span)
         return (min(max(dayStart, proposed), latest), span)
+    }
+
+    static func zoomedContinuousViewport(
+        baseStart: Date,
+        baseSpan: TimeInterval,
+        magnification: Double,
+        anchorRatio: Double
+    ) -> (start: Date, span: TimeInterval) {
+        let safeMagnification = max(0.01, magnification)
+        let span = min(maximumVisibleSpan, max(minimumVisibleSpan, baseSpan / safeMagnification))
+        let ratio = min(1, max(0, anchorRatio))
+        let anchor = baseStart.addingTimeInterval(baseSpan * ratio)
+        return (anchor.addingTimeInterval(-span * ratio), span)
+    }
+
+    static func cachedTimelineWindow(
+        centeredOn center: Date,
+        calendar: Calendar = .current
+    ) -> (start: Date, end: Date) {
+        let centerDay = calendar.startOfDay(for: center)
+        let start = calendar.date(byAdding: .day, value: -1, to: centerDay) ?? centerDay.addingTimeInterval(-maximumVisibleSpan)
+        let end = calendar.date(byAdding: .day, value: timelineCacheDays, to: start) ?? start.addingTimeInterval(Double(timelineCacheDays) * maximumVisibleSpan)
+        return (start, end)
+    }
+
+    static func cachedTimelineCovers(
+        visibleStart: Date,
+        visibleSpan: TimeInterval,
+        loadedStart: Date?,
+        loadedEnd: Date?,
+        preloadMargin: TimeInterval = 12 * 60 * 60
+    ) -> Bool {
+        guard let loadedStart, let loadedEnd else { return false }
+        return visibleStart >= loadedStart.addingTimeInterval(preloadMargin)
+            && visibleStart.addingTimeInterval(visibleSpan) <= loadedEnd.addingTimeInterval(-preloadMargin)
     }
 
     private static func merge(_ source: [ArchiveInterval]) -> [ArchiveInterval] {

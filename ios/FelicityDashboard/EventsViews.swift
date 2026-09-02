@@ -106,7 +106,7 @@ struct EventsView: View {
                             .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 18))
                     } else if model.events.isEmpty {
                         VStack(spacing: 12) {
-                            Image(systemName: model.error.isEmpty ? "rectangle.stack.badge.person.crop" : "network.slash")
+                            Image(systemName: model.error.isEmpty ? "rectangle.stack.badge.person.crop" : "wifi.slash")
                                 .font(.system(size: 38, weight: .medium))
                             Text(model.error.isEmpty ? "No matching events" : "3ye unavailable")
                                 .font(.headline)

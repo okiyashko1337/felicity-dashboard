@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-private enum FelicityPalette {
+enum FelicityPalette {
     static let background = Color(red: 7 / 255, green: 17 / 255, blue: 15 / 255)
     static let header = Color(red: 14 / 255, green: 48 / 255, blue: 43 / 255)
     static let card = Color(red: 13 / 255, green: 39 / 255, blue: 35 / 255)
@@ -218,7 +218,7 @@ private struct HeaderView: View {
                     .accessibilityLabel("Settings")
             }
             .buttonStyle(.plain)
-            Text("v0.4.6 · iOS")
+            Text("v0.4.7 · iOS")
                 .font(.headline.monospaced())
                 .foregroundStyle(FelicityPalette.accent)
             Spacer()
@@ -634,7 +634,7 @@ private struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section {
-                    LabeledContent("Client", value: "iOS 0.4.6")
+                    LabeledContent("Client", value: "iOS 0.4.7")
                     LabeledContent("Server", value: model.status.version)
                     LabeledContent("Connection", value: model.isLive ? "Live" : "Offline")
                     if !cameraPreferences.saveError.isEmpty {

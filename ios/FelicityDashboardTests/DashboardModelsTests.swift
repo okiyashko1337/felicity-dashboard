@@ -229,6 +229,7 @@ final class DashboardModelsTests: XCTestCase {
         let target = ArchiveTimelineRules.preferredPlaybackTarget(
             currentTime: todayFrame,
             visibleStart: yesterday,
+            visibleSpan: 24 * 3_600,
             intervals: [morning, evening],
             keyframeLead: 10,
             calendar: calendar
@@ -236,6 +237,40 @@ final class DashboardModelsTests: XCTestCase {
 
         XCTAssertEqual(target, evening.start)
         XCTAssertTrue(calendar.isDate(try XCTUnwrap(target), inSameDayAs: yesterday))
+    }
+
+    func testContinuousTimelineZoomCanCrossMidnight() throws {
+        let day = Date(timeIntervalSince1970: 10 * 86_400)
+        let start = day.addingTimeInterval(20 * 3_600)
+        let zoomed = ArchiveTimelineRules.zoomedContinuousViewport(
+            baseStart: start,
+            baseSpan: 8 * 3_600,
+            magnification: 2,
+            anchorRatio: 0.5
+        )
+        XCTAssertEqual(zoomed.span, 4 * 3_600)
+        XCTAssertEqual(zoomed.start, day.addingTimeInterval(22 * 3_600))
+        XCTAssertGreaterThan(zoomed.start.addingTimeInterval(zoomed.span), day.addingTimeInterval(24 * 3_600))
+    }
+
+    func testTimelineCacheKeepsThreeDaysAndReloadsNearEitherEdge() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let center = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 12)))
+        let window = ArchiveTimelineRules.cachedTimelineWindow(centeredOn: center, calendar: calendar)
+        XCTAssertEqual(window.end.timeIntervalSince(window.start), 3 * 86_400, accuracy: 0.001)
+        XCTAssertTrue(ArchiveTimelineRules.cachedTimelineCovers(
+            visibleStart: calendar.startOfDay(for: center),
+            visibleSpan: 24 * 3_600,
+            loadedStart: window.start,
+            loadedEnd: window.end
+        ))
+        XCTAssertFalse(ArchiveTimelineRules.cachedTimelineCovers(
+            visibleStart: window.start.addingTimeInterval(6 * 3_600),
+            visibleSpan: 24 * 3_600,
+            loadedStart: window.start,
+            loadedEnd: window.end
+        ))
     }
 
     func testRenderGenerationRejectsFramesFromPreviousSeek() {
