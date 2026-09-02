@@ -108,6 +108,29 @@ enum ArchiveTimelineRules {
         return best
     }
 
+    /// Resolves Play against the day currently shown by the timeline. The last
+    /// decoded frame may belong to another day while fresh metadata is loading;
+    /// carrying that absolute date into PLAY would silently jump back to it.
+    static func preferredPlaybackTarget(
+        currentTime: Date?,
+        visibleStart: Date,
+        intervals: [ArchiveInterval],
+        keyframeLead: TimeInterval = 0,
+        calendar: Calendar = .current
+    ) -> Date? {
+        guard !intervals.isEmpty else { return nil }
+        let dayStart = calendar.startOfDay(for: visibleStart)
+        if let currentTime,
+           calendar.isDate(currentTime, inSameDayAs: dayStart),
+           playbackEnd(for: currentTime, in: intervals, keyframeLead: keyframeLead) != nil {
+            return currentTime
+        }
+        let reference = currentTime ?? dayStart
+        let clock = calendar.dateComponents([.hour, .minute, .second, .nanosecond], from: reference)
+        let requested = calendar.date(byAdding: clock, to: dayStart) ?? dayStart
+        return nearestRecordedTime(to: requested, in: intervals)
+    }
+
     /// Returns the end of the continuous AI-covered segment selected for playback.
     /// A replay server may return a keyframe just before the requested boundary, so
     /// tolerate a short lead-in while still refusing unrelated archive motion.

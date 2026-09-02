@@ -90,8 +90,13 @@ final class ArchiveViewModel: ObservableObject {
             state = .paused
             statistics = .init(kbps: 0, fps: 0)
             Task { await session.pause() }
-        } else if let currentTime {
-            seek(to: currentTime, autoplay: true, snapToRecording: false, keyframeLead: 10)
+        } else if let target = ArchiveTimelineRules.preferredPlaybackTarget(
+            currentTime: currentTime,
+            visibleStart: visibleStart,
+            intervals: intervals,
+            keyframeLead: 10
+        ) {
+            seek(to: target, autoplay: true, snapToRecording: false, keyframeLead: 10)
         }
     }
 

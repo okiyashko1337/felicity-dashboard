@@ -218,7 +218,7 @@ private struct HeaderView: View {
                     .accessibilityLabel("Settings")
             }
             .buttonStyle(.plain)
-            Text("v0.4.5 · iOS")
+            Text("v0.4.6 · iOS")
                 .font(.headline.monospaced())
                 .foregroundStyle(FelicityPalette.accent)
             Spacer()
@@ -634,7 +634,7 @@ private struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section {
-                    LabeledContent("Client", value: "iOS 0.4.5")
+                    LabeledContent("Client", value: "iOS 0.4.6")
                     LabeledContent("Server", value: model.status.version)
                     LabeledContent("Connection", value: model.isLive ? "Live" : "Offline")
                     if !cameraPreferences.saveError.isEmpty {

@@ -210,6 +210,34 @@ final class DashboardModelsTests: XCTestCase {
         XCTAssertNil(ArchiveTimelineRules.playbackEnd(for: origin.addingTimeInterval(-11), in: intervals, keyframeLead: 10))
     }
 
+    func testPlaybackUsesVisibleArchiveDayInsteadOfLastDecodedDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let yesterday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 1)))
+        let todayFrame = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 18)))
+        let morning = ArchiveInterval(
+            kind: .person,
+            start: yesterday.addingTimeInterval(10 * 3_600),
+            end: yesterday.addingTimeInterval(10 * 3_600 + 60)
+        )
+        let evening = ArchiveInterval(
+            kind: .animal,
+            start: yesterday.addingTimeInterval(18 * 3_600 + 30 * 60),
+            end: yesterday.addingTimeInterval(18 * 3_600 + 31 * 60)
+        )
+
+        let target = ArchiveTimelineRules.preferredPlaybackTarget(
+            currentTime: todayFrame,
+            visibleStart: yesterday,
+            intervals: [morning, evening],
+            keyframeLead: 10,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(target, evening.start)
+        XCTAssertTrue(calendar.isDate(try XCTUnwrap(target), inSameDayAs: yesterday))
+    }
+
     func testRenderGenerationRejectsFramesFromPreviousSeek() {
         var gate = RenderGenerationGate()
         let first = gate.advance()
