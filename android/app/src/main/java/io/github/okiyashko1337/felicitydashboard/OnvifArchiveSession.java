@@ -26,7 +26,7 @@ final class OnvifArchiveSession implements AutoCloseable {
     private Response play(long time)throws Exception{deliverMedia=false;Response response=request("PLAY",base,"Session: "+session+"\r\nRequire: onvif-replay\r\nRange: clock="+clock(time)+"-\r\nRate-Control: yes\r\nFrames: all\r\nImmediate: yes\r\nScale: 1.0\r\n",true);paused=false;deliverMedia=response.code==200;lastControl=System.currentTimeMillis();Log.i("FelicityReplay","Direct RTSP PLAY · "+clock(time)+" · status="+response.code);return response;}
     private Response request(String method,String uri,String extra,boolean authenticated)throws Exception{
         Response response=requestOnce(method,uri,extra,authenticated);
-        // Ajax rotates the Digest nonce on a long paused archive session. Refresh it
+        // Some recorders rotate the Digest nonce on a long paused archive session. Refresh it
         // in-place: the RTSP Session id and the warmed MediaCodec remain untouched.
         if(authenticated&&response.code==401&&!response.auth.isEmpty()){
             challenge=response.auth;

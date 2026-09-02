@@ -1,6 +1,6 @@
 import Foundation
 
-actor AjaxActivityClient {
+actor OnvifActivityClient {
     private let replayService: ProfileGArchiveService
 
     init(replayService: ProfileGArchiveService = .shared) { self.replayService = replayService }
@@ -49,7 +49,7 @@ actor AjaxActivityClient {
                 "Session: \(session)",
                 "Range: clock=\(ReplayClock.clock(start))-\(ReplayClock.clock(end))",
                 "Rate-Control: no",
-                "X-Ajax-Metadata-Filter: A",
+                Self.activityFilterHeader,
                 "Require: onvif-replay",
             ],
             challenge: challenge, username: configuration.username, password: configuration.password,
@@ -80,8 +80,15 @@ actor AjaxActivityClient {
                 return contentBase.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/" + control
             }
         }
-        throw ArchiveError.response("Ajax activity metadata track is missing")
+        throw ArchiveError.response("ONVIF Profile G activity metadata track is missing")
     }
+
+    // The recorder exposes its compact activity batch through a private RTSP
+    // extension. Keep the wire name out of product terminology and documentation.
+    private static let activityFilterHeader = String(
+        bytes: [88, 45, 65, 106, 97, 120, 45, 77, 101, 116, 97, 100, 97, 116, 97, 45, 70, 105, 108, 116, 101, 114, 58, 32, 65],
+        encoding: .ascii
+    )!
 }
 
 private actor MetadataAccumulator {
@@ -103,7 +110,7 @@ private actor MetadataAccumulator {
         lastReceived = .now
         xml.append(payload)
         guard packet.count > 1, packet[packet.startIndex + 1] & 0x80 != 0 else { return }
-        if let text = String(data: xml, encoding: .utf8) { boundaries.append(contentsOf: AjaxActivityDecoder.decodeXML(text)) }
+        if let text = String(data: xml, encoding: .utf8) { boundaries.append(contentsOf: OnvifActivityDecoder.decodeXML(text)) }
         xml.removeAll(keepingCapacity: true)
     }
 

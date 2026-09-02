@@ -28,7 +28,7 @@ public final class OnvifEventClientTest {
         assertTrue(c.acceptRing(ring("Changed",true),10_000));
     }
 
-    @Test public void acceptsAjaxStateSamplesWithoutPropertyOperation(){
+    @Test public void acceptsOnvifStateSamplesWithoutPropertyOperation(){
         OnvifEventClient c=client();
         assertFalse(c.acceptRing(ring("",false),1_000));
         assertTrue(c.acceptRing(ring("",true),2_000));
@@ -38,7 +38,7 @@ public final class OnvifEventClientTest {
     }
 
     @Test public void parsesRingFieldsAndSingleQuotedOperation(){
-        String xml="<wsnt:NotificationMessage><wsnt:Topic>tns1:RuleEngine/tnsajax:RingDetector/Detection</wsnt:Topic>"
+        String xml="<wsnt:NotificationMessage><wsnt:Topic>tns1:RuleEngine/tnsrecorder:RingDetector/Detection</wsnt:Topic>"
                 +"<tt:Message PropertyOperation='Changed'><tt:Source><tt:SimpleItem Name='VideoSourceToken' Value='private-token'/></tt:Source>"
                 +"<tt:Data><tt:SimpleItem Name='State' Value='pressed'/></tt:Data></tt:Message></wsnt:NotificationMessage>";
         List<OnvifEventClient.Notification> parsed=OnvifEventClient.parseNotifications(xml);
@@ -51,8 +51,8 @@ public final class OnvifEventClientTest {
         assertEquals("VideoSourceToken,State=pressed",event.details);
     }
 
-    @Test public void acceptsObservedAjaxDetectedFalseToTrueTransition(){
-        String prefix="<wsnt:NotificationMessage><wsnt:Topic>tns1:RuleEngine/tnsajax:RingDetector/Detection</wsnt:Topic><tt:Message>"
+    @Test public void acceptsObservedOnvifDetectedFalseToTrueTransition(){
+        String prefix="<wsnt:NotificationMessage><wsnt:Topic>tns1:RuleEngine/tnsrecorder:RingDetector/Detection</wsnt:Topic><tt:Message>"
                 +"<tt:Source><tt:SimpleItem Name=\"VideoSourceToken\" Value=\"token\"/><tt:SimpleItem Name=\"Rule\" Value=\"ring-rule\"/></tt:Source><tt:Data>";
         String suffix="</tt:Data></tt:Message></wsnt:NotificationMessage>";
         OnvifEventClient.Notification idle=OnvifEventClient.parseNotifications(prefix+"<tt:SimpleItem Name=\"Detected\" Value=\"false\"/>"+suffix).get(0);

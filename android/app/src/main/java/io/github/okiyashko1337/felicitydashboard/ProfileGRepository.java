@@ -38,21 +38,21 @@ final class ProfileGRepository {
 
     static List<ProfileGClient.SearchEvent> events(SharedPreferences prefs,String camera,long start,long end,boolean substream)throws Exception{
         if(end<=start)return Collections.emptyList();Replay replay=replay(prefs,camera,substream);String key=replay.uri+"|"+start+"|"+end; synchronized(ProfileGRepository.class){List<ProfileGClient.SearchEvent> cached=activityRanges.get(key);if(cached!=null)return new ArrayList<>(cached);}
-        long began=android.os.SystemClock.elapsedRealtime();List<AjaxMetadataDecoder.Activity> activities=new AjaxActivityClient(replay.uri,replay.user,replay.password).fetch(start,end);ArrayList<ProfileGClient.SearchEvent> loaded=new ArrayList<>();
+        long began=android.os.SystemClock.elapsedRealtime();List<OnvifMetadataDecoder.Activity> activities=new OnvifActivityClient(replay.uri,replay.user,replay.password).fetch(start,end);ArrayList<ProfileGClient.SearchEvent> loaded=new ArrayList<>();
         loaded.addAll(activityIntervals(activities));
-        synchronized(ProfileGRepository.class){if(activityRanges.size()>31)activityRanges.clear();activityRanges.put(key,new ArrayList<>(loaded));}Log.i("FelicityProfileG","Ajax activities · camera="+camera+" · events="+loaded.size()+" · "+(android.os.SystemClock.elapsedRealtime()-began)+" ms");return loaded;
+        synchronized(ProfileGRepository.class){if(activityRanges.size()>31)activityRanges.clear();activityRanges.put(key,new ArrayList<>(loaded));}Log.i("FelicityProfileG","ONVIF activities · camera="+camera+" · events="+loaded.size()+" · "+(android.os.SystemClock.elapsedRealtime()-began)+" ms");return loaded;
     }
 
-    static List<ProfileGClient.SearchEvent> activityIntervals(List<AjaxMetadataDecoder.Activity> activities){
+    static List<ProfileGClient.SearchEvent> activityIntervals(List<OnvifMetadataDecoder.Activity> activities){
         ArrayList<ProfileGClient.SearchEvent> result=new ArrayList<>();Map<String,Long> opened=new HashMap<>();
-        for(AjaxMetadataDecoder.Activity activity:activities)for(String type:activity.types()){
+        for(OnvifMetadataDecoder.Activity activity:activities)for(String type:activity.types()){
             if(type.isEmpty()||"motion".equals(type))continue;
-            if(!activity.asserted){Long abandoned=opened.put(type,activity.timeMs);if(abandoned!=null)warn("Unclosed Ajax "+type+" activity · "+new java.util.Date(abandoned)+" · replaced at "+new java.util.Date(activity.timeMs));continue;}
+            if(!activity.asserted){Long abandoned=opened.put(type,activity.timeMs);if(abandoned!=null)warn("Unclosed ONVIF "+type+" activity · "+new java.util.Date(abandoned)+" · replaced at "+new java.util.Date(activity.timeMs));continue;}
             Long start=opened.remove(type);
             if(start!=null&&activity.timeMs>start&&activity.timeMs-start<=10*60_000)addInterval(result,Math.max(0,start-ACTIVITY_CONTEXT_MS),activity.timeMs+ACTIVITY_CONTEXT_MS,type);
             else if("ring".equals(type))addInterval(result,Math.max(0,activity.timeMs-ACTIVITY_CONTEXT_MS),activity.timeMs+ACTIVITY_CONTEXT_MS,type);
         }
-        for(Map.Entry<String,Long> entry:opened.entrySet())warn("Unclosed Ajax "+entry.getKey()+" activity · "+new java.util.Date(entry.getValue()));Collections.sort(result,(left,right)->Long.compare(left.time,right.time));return result;
+        for(Map.Entry<String,Long> entry:opened.entrySet())warn("Unclosed ONVIF "+entry.getKey()+" activity · "+new java.util.Date(entry.getValue()));Collections.sort(result,(left,right)->Long.compare(left.time,right.time));return result;
     }
 
     /**

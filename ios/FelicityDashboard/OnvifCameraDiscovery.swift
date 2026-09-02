@@ -76,7 +76,7 @@ actor OnvifCameraDiscovery {
                     do {
                         return (profile.token, try await Self.streamURI(for: profile.token, endpoint: endpoint, soap: soap))
                     } catch {
-                        return (profile.token, Self.ajaxFallbackURI(host: base.host ?? configuration.host, token: profile.token))
+                        return (profile.token, Self.recorderFallbackURI(host: base.host ?? configuration.host, token: profile.token))
                     }
                 }
             }
@@ -255,7 +255,7 @@ actor OnvifCameraDiscovery {
         return decode(result[2])
     }
 
-    private static func ajaxFallbackURI(host: String, token: String) -> String {
+    private static func recorderFallbackURI(host: String, token: String) -> String {
         let path = token.replacingOccurrences(of: #"(?i)-main$"#, with: "_m", options: .regularExpression).replacingOccurrences(of: #"(?i)-sub$"#, with: "_s", options: .regularExpression)
         return "rtsp://\(host):8554/\(path)"
     }

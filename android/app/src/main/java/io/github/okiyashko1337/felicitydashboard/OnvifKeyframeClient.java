@@ -18,10 +18,10 @@ import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Direct, decoder-free keyframe index query against an Ajax ONVIF replay URI. */
-final class AjaxKeyframeClient {
+/** Direct, decoder-free keyframe index query against an ONVIF Profile G replay URI. */
+final class OnvifKeyframeClient {
     private final String base,host,user,password;private final int port;private Socket socket;private InputStream input;private OutputStream output;
-    AjaxKeyframeClient(String uri,String user,String password){URI parsed=URI.create(uri);host=parsed.getHost();port=parsed.getPort()>0?parsed.getPort():554;base="rtsp://"+host+(port==554?"":":"+port)+parsed.getRawPath();this.user=user;this.password=password;}
+    OnvifKeyframeClient(String uri,String user,String password){URI parsed=URI.create(uri);host=parsed.getHost();port=parsed.getPort()>0?parsed.getPort():554;base="rtsp://"+host+(port==554?"":":"+port)+parsed.getRawPath();this.user=user;this.password=password;}
 
     List<Long> fetch(long startMs,long endMs)throws Exception{
         ArrayList<Long> found=new ArrayList<>();

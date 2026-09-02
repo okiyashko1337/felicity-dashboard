@@ -26,7 +26,7 @@ final class ArchiveViewModel: ObservableObject {
     private let threeEye: ThreeEyeConfiguration?
     private var entryEvent: ThreeEyeEvent?
     private let session = ArchiveRTSPSession()
-    private let activityClient = AjaxActivityClient()
+    private let activityClient = OnvifActivityClient()
     private var seekTask: Task<Void, Never>?
     private var timelineTask: Task<Void, Never>?
     private var started = false

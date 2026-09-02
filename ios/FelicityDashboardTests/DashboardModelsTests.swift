@@ -55,7 +55,7 @@ final class DashboardModelsTests: XCTestCase {
         let raw = """
         v=0\r
         o=- 0 0 IN IP4 127.0.0.1\r
-        s=Ajax live\r
+        s=ONVIF live\r
         t=0 0\r
         m=video 0 RTP/AVP 96\r
         a=rtpmap:96 H264/90000\r
@@ -83,7 +83,7 @@ final class DashboardModelsTests: XCTestCase {
         XCTAssertEqual(events[0].thumbnailURL?.absoluteString, "http://192.168.13.148:8765/api/objects/42/thumbnail")
     }
 
-    func testAjaxActivityBatchDecodesAndBuildsContextInterval() throws {
+    func testOnvifActivityBatchDecodesAndBuildsContextInterval() throws {
         let startUS: UInt64 = 1_788_244_800_000_000
         let endUS = startUS + 4_000_000
         let started = protoMessage([
@@ -95,7 +95,8 @@ final class DashboardModelsTests: XCTestCase {
             protoBytes(3, protoMessage([protoBytes(5, protoMessage([protoVarint(1, 2)])), protoVarint(101, 1)])),
         ])
         let batch = protoMessage([protoBytes(1, Data("A".utf8)), protoBytes(2, started), protoBytes(2, ended)])
-        let boundaries = AjaxActivityDecoder.decode(batch)
+        let xml = "<recorder:Metadata>\(batch.base64EncodedString())</recorder:Metadata>"
+        let boundaries = OnvifActivityDecoder.decodeXML(xml)
         let intervals = ArchiveTimelineRules.intervals(from: boundaries)
         XCTAssertEqual(boundaries.count, 2)
         XCTAssertEqual(intervals.count, 1)
@@ -116,12 +117,12 @@ final class DashboardModelsTests: XCTestCase {
             protoBytes(3, protoMessage([protoBytes(5, protoMessage([protoVarint(1, 10)])), protoVarint(101, 1)])),
         ])
         let batch = protoMessage([protoBytes(1, Data("A".utf8)), protoBytes(2, started), protoBytes(2, ended)])
-        let intervals = ArchiveTimelineRules.intervals(from: AjaxActivityDecoder.decode(batch))
+        let intervals = ArchiveTimelineRules.intervals(from: OnvifActivityDecoder.decode(batch))
         XCTAssertEqual(intervals.map(\.kind), [.person, .vehicle])
         XCTAssertGreaterThan(ArchiveActivityKind.vehicle.timelineLayer, ArchiveActivityKind.person.timelineLayer)
     }
 
-    func testReplayClockReadsAjaxNTPHeaderExtension() throws {
+    func testReplayClockReadsOnvifNTPHeaderExtension() throws {
         let unix: UInt32 = 1_788_244_800
         let ntp = UInt64(unix) + 2_208_988_800
         var packet = Data([0x90, 0xe0, 0, 1, 0, 1, 0x5f, 0x90, 0, 0, 0, 1, 0xab, 0xac, 0, 3])

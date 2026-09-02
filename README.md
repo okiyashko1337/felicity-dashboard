@@ -18,7 +18,7 @@ native Android kiosk. No cloud account is required.
 | Display | Best for | Highlights |
 |---|---|---|
 | **Home Assistant app** | Browser and HA sidebar | Live overview, analytics, history, diagnostics |
-| **Android kiosk** | Echo Show 5 and landscape tablets | Weather, charts, Ajax doorbell video/audio, red night mode |
+| **Android kiosk** | Echo Show 5 and landscape tablets | Weather, charts, ONVIF doorbell video/audio, red night mode |
 | **iOS (preview)** | iPad and iPhone | Native adaptive energy screen; camera and archive parity in progress |
 | **ESP32 + Nextion** | Small dedicated panel | Fast local UI, Wi-Fi onboarding, dual OTA updates |
 
@@ -28,7 +28,7 @@ native Android kiosk. No cloud account is required.
 </p>
 
 The Android client is a full alternative to the original Nextion display—not
-a web page in a wrapper. Ajax incoming G.722 audio is supported; outgoing
+a web page in a wrapper. ONVIF incoming G.722 audio is supported; outgoing
 talk-back remains experimental.
 
 ## How it fits together
@@ -89,7 +89,7 @@ Home Assistant backups.
 
 The inverter protocol and compact display API have no application-level
 authentication. Keep them on a trusted LAN; use a VPN or authenticated HTTPS
-gateway for remote access. Ajax credentials remain in Android private storage.
+gateway for remote access. ONVIF credentials remain in Android private storage.
 
 Copyright 2026 okiyashko1337. Distributed under the
 [non-commercial license](LICENSE); commercial use requires separate written

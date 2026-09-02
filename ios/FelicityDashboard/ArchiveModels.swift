@@ -27,7 +27,7 @@ enum ArchiveActivityKind: String, CaseIterable, Codable, Hashable, Sendable {
         }
     }
 
-    /// Matches Android's draw order for combined Ajax activity masks. Later
+    /// Matches Android's draw order for combined ONVIF activity masks. Later
     /// classes are painted above earlier ones on the single compact timeline.
     var timelineLayer: Int {
         switch self {
@@ -217,9 +217,9 @@ final class ArchiveMarkerStore {
     }
 }
 
-enum AjaxActivityDecoder {
+enum OnvifActivityDecoder {
     static func decodeXML(_ xml: String) -> [ArchiveActivityBoundary] {
-        guard let encoded = capture(xml, #"<ajax:Metadata\b[^>]*>([^<]+)</ajax:Metadata>"#),
+        guard let encoded = capture(xml, #"<(?:[A-Za-z_][\w.-]*:)?Metadata\b[^>]*>([^<]+)</(?:[A-Za-z_][\w.-]*:)?Metadata>"#),
               let payload = Data(base64Encoded: encoded.trimmingCharacters(in: .whitespacesAndNewlines)) else { return [] }
         return decode(payload)
     }
@@ -386,7 +386,7 @@ enum ArchiveError: LocalizedError {
         switch self {
         case .noRecording: return "This camera has no Profile G recording"
         case .noReplayURI: return "Recorder did not return a replay URI"
-        case .invalidMetadata: return "Invalid Ajax archive metadata"
+        case .invalidMetadata: return "Invalid ONVIF Profile G archive metadata"
         case let .response(value): return value
         }
     }

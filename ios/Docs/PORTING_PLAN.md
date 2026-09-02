@@ -11,7 +11,7 @@ reference, not a source to translate line by line.
 | 0 — Energy home | Adaptive six-card dashboard, settings and live status | Typed API models, polling lifecycle, server preference |
 | 1 — Live cameras | Camera wall, last-frame thumbnails, LQ/HQ and pinch-to-zoom | Camera catalogue, RTSP/RTP transport, VideoToolbox renderer, per-camera quality |
 | 2 — Events | Lightweight 3ye event list with camera/class filters | 3ye DTOs, thumbnail cache, event navigation |
-| 3 — Archive | Ajax-style timeline and deterministic seek | Profile G discovery, replay session, Ajax metadata filter `A`, activity intervals, real decoded playhead |
+| 3 — Archive | ONVIF timeline and deterministic seek | Profile G discovery, replay session, activity metadata filter, activity intervals, real decoded playhead |
 | 4 — Audio | Incoming G.722 and privacy-safe talk-back | Native audio session, G.722 vectors, microphone timeout and route handling |
 | 5 — Foreground ring | Doorbell opens immediately while Felicity is active | ONVIF event subscription, ring snapshot and 60-second return |
 
@@ -21,7 +21,7 @@ Push notifications and background ring delivery are intentionally excluded.
 
 1. Extract behaviour from Android behind small contracts before reusing it.
    UI activities and Android lifecycle objects never enter the shared core.
-2. Preserve protocol code with golden byte-level fixtures. Ajax metadata, RTP
+2. Preserve protocol code with golden byte-level fixtures. ONVIF metadata, RTP
    depacketization, replay clocks and G.722 must produce the same results on
    Android and iOS before their implementations are consolidated.
 3. Keep decoding native. Android MediaCodec/libVLC and Apple VideoToolbox have

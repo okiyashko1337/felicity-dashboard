@@ -7,10 +7,10 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Decodes the proprietary Ajax payload carried by the ONVIF replay metadata track. */
-final class AjaxMetadataDecoder {
+/** Decodes recorder activity payloads carried by the ONVIF Profile G metadata track. */
+final class OnvifMetadataDecoder {
     private static final Pattern UTC=Pattern.compile("\\bUtcTime=\"([^\"]+)\"");
-    private static final Pattern PAYLOAD=Pattern.compile("<ajax:Metadata\\b[^>]*>([^<]+)</ajax:Metadata>");
+    private static final Pattern PAYLOAD=Pattern.compile("<(?:[A-Za-z_][\\w.-]*:)?Metadata\\b[^>]*>([^<]+)</(?:[A-Za-z_][\\w.-]*:)?Metadata>");
 
     static final class Figure {
         final String utc;
@@ -26,7 +26,7 @@ final class AjaxMetadataDecoder {
         String type(){return typeForCode(classCode);}
     }
 
-    /** One compact archive activity returned by X-Ajax-Metadata-Filter: A. */
+    /** One compact archive activity returned by the recorder's activity-only filter. */
     static final class Activity {
         final long timeMs;
         final long utcOffsetUs;
@@ -46,7 +46,7 @@ final class AjaxMetadataDecoder {
 
     static String typeForCode(int code){if(code==2)return "person";if(code==3)return "animal";if(code==6)return "vehicle";return "";}
 
-    /* Ajax archive activities are a bit mask, unlike the Figure class enum above. */
+    /* ONVIF archive activities are a bit mask, unlike the Figure class enum above. */
     static String activityTypeForMask(int mask){if((mask&2)!=0)return "person";if((mask&4)!=0)return "animal";if((mask&8)!=0)return "vehicle";return "";}
 
     static List<Figure> decodeXml(String xml){

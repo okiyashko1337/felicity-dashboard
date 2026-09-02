@@ -12,7 +12,7 @@ final class DashboardState {
     double todayPv, todayLoad, coverage, gridImport, gridExport;
     String version = "—";
     String serverUrl = "—";
-    String ajaxStatus = "Not configured";
+    String onvifStatus = "Not configured";
     String networkRecoveryStatus = "OBSERVING";
     String networkRecoveryDetail = "No network events";
     final String[] networkDiagnostics = new String[8];

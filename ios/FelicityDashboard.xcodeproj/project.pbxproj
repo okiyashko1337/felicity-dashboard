@@ -27,7 +27,7 @@
 		110000000000000000000012 /* ArchiveModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000015 /* ArchiveModels.swift */; };
 		110000000000000000000013 /* ArchiveRTSPTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000016 /* ArchiveRTSPTransport.swift */; };
 		110000000000000000000014 /* ProfileGArchiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000017 /* ProfileGArchiveService.swift */; };
-		110000000000000000000015 /* AjaxActivityClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000018 /* AjaxActivityClient.swift */; };
+		110000000000000000000015 /* OnvifActivityClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000018 /* OnvifActivityClient.swift */; };
 		110000000000000000000016 /* ArchiveRTSPSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000019 /* ArchiveRTSPSession.swift */; };
 		110000000000000000000017 /* ArchiveViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12000000000000000000001A /* ArchiveViews.swift */; };
 /* End PBXBuildFile section */
@@ -66,7 +66,7 @@
 		120000000000000000000015 /* ArchiveModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveModels.swift; sourceTree = "<group>"; };
 		120000000000000000000016 /* ArchiveRTSPTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveRTSPTransport.swift; sourceTree = "<group>"; };
 		120000000000000000000017 /* ProfileGArchiveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileGArchiveService.swift; sourceTree = "<group>"; };
-		120000000000000000000018 /* AjaxActivityClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AjaxActivityClient.swift; sourceTree = "<group>"; };
+		120000000000000000000018 /* OnvifActivityClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnvifActivityClient.swift; sourceTree = "<group>"; };
 		120000000000000000000019 /* ArchiveRTSPSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveRTSPSession.swift; sourceTree = "<group>"; };
 		12000000000000000000001A /* ArchiveViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -128,7 +128,7 @@
 				120000000000000000000015 /* ArchiveModels.swift */,
 				120000000000000000000016 /* ArchiveRTSPTransport.swift */,
 				120000000000000000000017 /* ProfileGArchiveService.swift */,
-				120000000000000000000018 /* AjaxActivityClient.swift */,
+				120000000000000000000018 /* OnvifActivityClient.swift */,
 				120000000000000000000019 /* ArchiveRTSPSession.swift */,
 				12000000000000000000001A /* ArchiveViews.swift */,
 				120000000000000000000007 /* Assets.xcassets */,
@@ -262,7 +262,7 @@
 				110000000000000000000012 /* ArchiveModels.swift in Sources */,
 				110000000000000000000013 /* ArchiveRTSPTransport.swift in Sources */,
 				110000000000000000000014 /* ProfileGArchiveService.swift in Sources */,
-				110000000000000000000015 /* AjaxActivityClient.swift in Sources */,
+				110000000000000000000015 /* OnvifActivityClient.swift in Sources */,
 				110000000000000000000016 /* ArchiveRTSPSession.swift in Sources */,
 				110000000000000000000017 /* ArchiveViews.swift in Sources */,
 			);

@@ -6,8 +6,8 @@ import java.util.List;
 import org.junit.Test;
 
 public final class ProfileGRepositoryTest {
-    @Test public void pairsAjaxAiBoundariesAndExcludesMotion(){
-        List<AjaxMetadataDecoder.Activity> source=Arrays.asList(
+    @Test public void pairsOnvifAiBoundariesAndExcludesMotion(){
+        List<OnvifMetadataDecoder.Activity> source=Arrays.asList(
                 activity(500,0,false,true),activity(800,0,true,true),
                 activity(10_000,2,false,false),activity(17_000,2,true,false),
                 activity(20_000,4,false,false),activity(24_000,4,true,false));
@@ -41,5 +41,5 @@ public final class ProfileGRepositoryTest {
         assertEquals(20_000,ProfileGRepository.nearestActivityTime(events,27_000,0,60_000));
     }
 
-    private static AjaxMetadataDecoder.Activity activity(long time,int mask,boolean asserted,boolean motion){return new AjaxMetadataDecoder.Activity(time,0,mask,0,asserted,motion,false);}
+    private static OnvifMetadataDecoder.Activity activity(long time,int mask,boolean asserted,boolean motion){return new OnvifMetadataDecoder.Activity(time,0,mask,0,asserted,motion,false);}
 }

@@ -594,7 +594,7 @@ private struct SettingsView: View {
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
                 }
-                Section("Ajax recorder · ONVIF") {
+                Section("ONVIF recorder · Profile G") {
                     TextField("192.168.13.234:8080", text: $cameraPreferences.recorderHost)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()

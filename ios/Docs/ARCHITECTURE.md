@@ -9,7 +9,7 @@ The iOS app is a native SwiftUI client. Platform APIs remain native:
 - SwiftUI/UIKit for adaptive iPhone and iPad interfaces.
 
 `CoreContracts.swift` is the boundary for the shared domain layer. The first
-shared extraction covers models, Ajax metadata, event filters, archive marker
+shared extraction covers models, ONVIF metadata, event filters, archive marker
 TTL, timeline/seek rules, RTP depacketization and G.722. Media decoding,
 rendering, persistence and application lifecycle are deliberately excluded.
 
@@ -27,11 +27,11 @@ Archive playback is owned by one direct RTSP-over-TCP session per open archive
 screen. `PAUSE`, `PLAY` and range seeks share that session; the app never sends
 synthetic keep-alive video frames. A lightweight `GET_PARAMETER` keeps a paused
 recorder session alive. The displayed clock and timeline cursor are updated from
-the Ajax absolute NTP extension on a delivered RTP access unit, never from the
+the recorder's absolute NTP extension on a delivered RTP access unit, never from the
 requested seek target.
 
-Ajax activity is queried through its replay metadata track with
-`Rate-Control: no` and `X-Ajax-Metadata-Filter: A`. The compact protobuf batch is
-decoded locally into person, animal, vehicle and ring intervals. Plain motion is
-ignored; face points come from 3ye because the Ajax activity bit mask does not
+ONVIF Profile G activity is queried through its replay metadata track with
+`Rate-Control: no` and the recorder's activity-only metadata filter. The compact
+protobuf batch is decoded locally into person, animal, vehicle and ring intervals. Plain motion is
+ignored; face points come from 3ye because the ONVIF activity bit mask does not
 carry a separate face class.

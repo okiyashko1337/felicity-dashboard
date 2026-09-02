@@ -1,6 +1,6 @@
 # Felicity for iOS
 
-Native iPhone and iPad client for the Felicity energy and Ajax camera system.
+Native iPhone and iPad client for the Felicity energy and ONVIF camera system.
 
 ## Open and run
 
@@ -16,7 +16,7 @@ to change it. The app requests local-network access on first connection.
 
 Version 0.4 includes the native camera, 3ye event and Profile G archive slices:
 
-- direct ONVIF discovery from the Ajax recorder;
+- direct ONVIF discovery from the recorder;
 - direct RTSP-over-TCP H.264/H.265 playback with Apple hardware decoding;
 - a smooth static-preview camera wall with no background stream churn;
 - native pinch, pan and double-tap reset;
@@ -26,14 +26,14 @@ Version 0.4 includes the native camera, 3ye event and Profile G archive slices:
 - camera/all-camera scope plus person, vehicle, animal and face filters; and
 - event-to-archive navigation that opens paused on the nearest decodable frame;
 - one persistent replay session with fast seek, play/pause and previous/next;
-- an Ajax activity timeline fetched through `X-Ajax-Metadata-Filter: A`, with
-  plain motion excluded and six seconds of context around AI activity;
+- an ONVIF Profile G activity timeline fetched through the recorder metadata
+  track, with plain motion excluded and six seconds of context around AI activity;
 - a real decoded-frame playhead, per-camera LQ/HQ and archive pinch-to-zoom;
 - a 30-minute cross-camera investigation marker and persisted JPEG continuity;
 - automatic IPv4 preference for `.local` Felicity hosts whose advertised IPv6
   address is unreachable.
 
-Open **Settings → Ajax recorder · ONVIF**, enter the recorder address and its
+Open **Settings → ONVIF recorder · Profile G**, enter the recorder address and its
 ONVIF credentials, then tap **Discover cameras**. The camera button on the home
 screen opens the selected camera; tap its name in Live to switch cameras. Open
 **Events** from either the energy or Live header. Event images are fetched with

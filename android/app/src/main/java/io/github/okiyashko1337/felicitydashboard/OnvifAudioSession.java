@@ -17,9 +17,9 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Receives Ajax's G.722 RTP track and lets LibVLC decode it from a tagged WAV pipe. */
-final class AjaxAudioSession {
-    private static final String TAG="AjaxAudio";
+/** Receives the ONVIF camera's G.722 RTP track and decodes it for Android audio output. */
+final class OnvifAudioSession {
+    private static final String TAG="OnvifAudio";
     private final Context context;
     private final String base,host,user,password;
     private final int port;
@@ -31,12 +31,12 @@ final class AjaxAudioSession {
     private OutputStream output;
     private AudioTrack player;private final G722Decoder decoder=new G722Decoder();
 
-    AjaxAudioSession(Context context,String streamUri,String user,String password){
+    OnvifAudioSession(Context context,String streamUri,String user,String password){
         this.context=context.getApplicationContext();this.user=user;this.password=password;
         URI parsed=URI.create(streamUri);host=parsed.getHost();port=parsed.getPort()>0?parsed.getPort():554;
         String authority=host+(parsed.getPort()>0?":"+parsed.getPort():"");base="rtsp://"+authority+parsed.getRawPath();
     }
-    void start(){thread=new Thread(this::run,"ajax-listen-rtsp");thread.start();}
+    void start(){thread=new Thread(this::run,"onvif-listen-rtsp");thread.start();}
     void setVolume(int value){volume=value;AudioTrack current=player;if(current!=null)current.setVolume(value/100f);}
     void stop(){stopped=true;close();}
 

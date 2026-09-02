@@ -139,13 +139,13 @@ final class ProfileGClient {
             String name=value(block,"Name"),source=value(element(block,"VideoSourceConfiguration"),"SourceToken");
             String encoder=element(block,"VideoEncoderConfiguration"),resolution=element(encoder,"Resolution");
             int width=integer(value(resolution,"Width")),height=integer(value(resolution,"Height")),rotation=integer(value(element(block,"Rotate"),"Degree"));
-            String uri;try{uri=streamUri(result.mediaEndpoint,token);}catch(Exception streamError){Log.w(TAG,"GetStreamUri fallback · token="+safeToken(token)+" · "+streamError.getMessage());uri=ajaxStreamUri(token);}
+            String uri;try{uri=streamUri(result.mediaEndpoint,token);}catch(Exception streamError){Log.w(TAG,"GetStreamUri fallback · token="+safeToken(token)+" · "+streamError.getMessage());uri=recorderStreamUri(token);}
             result.profiles.add(new MediaProfile(token,name,source,uri,width,height,normalizeRotation(rotation)));
             Log.i(TAG,"Media profile · token="+safeToken(token)+" · name="+name+" · "+width+"x"+height+" · rotation="+normalizeRotation(rotation));
         }
     }
 
-    private String ajaxStreamUri(String profileToken){String address=host;int colon=address.lastIndexOf(':');if(colon>0)address=address.substring(0,colon);String path=profileToken.replaceFirst("(?i)-main$","_m").replaceFirst("(?i)-sub$","_s");return "rtsp://"+address+":8554/"+path;}
+    private String recorderStreamUri(String profileToken){String address=host;int colon=address.lastIndexOf(':');if(colon>0)address=address.substring(0,colon);String path=profileToken.replaceFirst("(?i)-main$","_m").replaceFirst("(?i)-sub$","_s");return "rtsp://"+address+":8554/"+path;}
     private static String cleanProfileName(String name){return name==null?"":name.replaceFirst("(?i)(?:[_ -](?:main|sub|secondary))$","").trim();}
 
     private String streamUri(String endpoint,String profileToken)throws Exception{
