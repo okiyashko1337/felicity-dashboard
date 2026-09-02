@@ -68,11 +68,18 @@ final class SampleBufferRenderer: ObservableObject {
         for nal in nals { registerParameterSet(nal, isHEVC: streamFormat.isHEVC) }
         if formatDescription == nil { rebuildFormatDescriptionIfPossible() }
         guard let formatDescription, let sample = Self.sampleBuffer(nals: nals, format: formatDescription, keyframe: unit.isKeyframe) else { return }
-        if layer.sampleBufferRenderer.status == .failed {
-            layer.sampleBufferRenderer.flush(removingDisplayedImage: false, completionHandler: nil)
+        if #available(iOS 17.0, *) {
+            let renderer = layer.sampleBufferRenderer
+            if renderer.status == .failed {
+                renderer.flush(removingDisplayedImage: false, completionHandler: nil)
+            }
+            guard renderer.isReadyForMoreMediaData else { return }
+            renderer.enqueue(sample)
+        } else {
+            if layer.status == .failed { layer.flush() }
+            guard layer.isReadyForMoreMediaData else { return }
+            layer.enqueue(sample)
         }
-        guard layer.sampleBufferRenderer.isReadyForMoreMediaData else { return }
-        layer.sampleBufferRenderer.enqueue(sample)
         monitorReadiness(for: generation)
     }
 
@@ -139,8 +146,14 @@ final class SampleBufferRenderer: ObservableObject {
     }
 
     private func flushLayer(removingDisplayedImage: Bool, generation: UInt64) {
-        layer.sampleBufferRenderer.flush(removingDisplayedImage: removingDisplayedImage) { [weak self] in
-            Task { @MainActor in self?.finishFlush(generation: generation) }
+        if #available(iOS 17.0, *) {
+            layer.sampleBufferRenderer.flush(removingDisplayedImage: removingDisplayedImage) { [weak self] in
+                Task { @MainActor in self?.finishFlush(generation: generation) }
+            }
+        } else {
+            if removingDisplayedImage { layer.flushAndRemoveImage() }
+            else { layer.flush() }
+            finishFlush(generation: generation)
         }
     }
 
@@ -163,8 +176,10 @@ final class SampleBufferRenderer: ObservableObject {
                 if #available(iOS 17.4, *) {
                     let address = self.displayedPixelAddress()
                     ready = self.layer.isReadyForDisplay && address != nil && address != self.displayedPixelAddressBeforeSeek
-                } else {
+                } else if #available(iOS 17.0, *) {
                     ready = self.layer.sampleBufferRenderer.status != .failed
+                } else {
+                    ready = self.layer.status != .failed
                 }
                 if ready {
                     self.readyGeneration = generation

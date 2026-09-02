@@ -562,60 +562,82 @@ private struct ArchiveTimelineView: View {
     var body: some View {
         GeometryReader { proxy in
             let width = max(1, proxy.size.width)
-            ZStack(alignment: .leading) {
-                Color(red: 0.07, green: 0.09, blue: 0.09)
-                tickMarks(width: width)
-                ForEach(model.intervals) { interval in
-                    let x1 = x(interval.start, width: width)
-                    let x2 = x(interval.end, width: width)
-                    if x2 >= 0, x1 <= width {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(interval.kind.color)
-                            .frame(width: max(3, x2 - x1), height: 34)
-                            .offset(x: x1, y: -18)
-                    }
-                }
-                if let current = model.currentTime {
-                    Rectangle().fill(.white).frame(width: 2, height: 92).offset(x: x(current, width: width))
-                }
-                if model.isLoadingTimeline { ProgressView().tint(.cyan).frame(maxWidth: .infinity) }
-            }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onEnded { value in
-                        guard !suppressDrag else { return }
-                        if abs(value.translation.width) > 10 {
-                            model.panTimeline(seconds: -Double(value.translation.width / width) * model.visibleSpan)
-                        } else {
-                            let ratio = min(1, max(0, value.location.x / width))
-                            model.seek(to: model.visibleStart.addingTimeInterval(Double(ratio) * model.visibleSpan))
-                        }
-                    }
-            )
-            .simultaneousGesture(
-                MagnifyGesture()
-                    .onChanged { value in
-                        if pinchBaseStart == nil {
-                            pinchBaseStart = model.visibleStart
-                            pinchBaseSpan = model.visibleSpan
-                        }
-                        suppressDrag = true
-                        guard let baseStart = pinchBaseStart, let baseSpan = pinchBaseSpan else { return }
-                        model.zoomTimeline(
-                            from: baseStart,
-                            span: baseSpan,
-                            magnification: Double(value.magnification),
-                            anchorRatio: Double(value.startAnchor.x)
-                        )
-                    }
-                    .onEnded { _ in
-                        pinchBaseStart = nil
-                        pinchBaseSpan = nil
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { suppressDrag = false }
-                    }
-            )
+            interactiveTimeline(width: width)
         }
+    }
+
+    @ViewBuilder private func interactiveTimeline(width: CGFloat) -> some View {
+        if #available(iOS 17.0, *) {
+            timeline(width: width)
+                .contentShape(Rectangle())
+                .gesture(dragGesture(width: width))
+                .simultaneousGesture(
+                    MagnifyGesture()
+                        .onChanged { value in
+                            updateZoom(magnification: Double(value.magnification), anchorRatio: Double(value.startAnchor.x))
+                        }
+                        .onEnded { _ in finishZoom() }
+                )
+        } else {
+            timeline(width: width)
+                .contentShape(Rectangle())
+                .gesture(dragGesture(width: width))
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { value in updateZoom(magnification: Double(value), anchorRatio: 0.5) }
+                        .onEnded { _ in finishZoom() }
+                )
+        }
+    }
+
+    private func timeline(width: CGFloat) -> some View {
+        ZStack(alignment: .leading) {
+            Color(red: 0.07, green: 0.09, blue: 0.09)
+            tickMarks(width: width)
+            ForEach(model.intervals) { interval in
+                let x1 = x(interval.start, width: width)
+                let x2 = x(interval.end, width: width)
+                if x2 >= 0, x1 <= width {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(interval.kind.color)
+                        .frame(width: max(3, x2 - x1), height: 34)
+                        .offset(x: x1, y: -18)
+                }
+            }
+            if let current = model.currentTime {
+                Rectangle().fill(.white).frame(width: 2, height: 92).offset(x: x(current, width: width))
+            }
+            if model.isLoadingTimeline { ProgressView().tint(.cyan).frame(maxWidth: .infinity) }
+        }
+    }
+
+    private func dragGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onEnded { value in
+                guard !suppressDrag else { return }
+                if abs(value.translation.width) > 10 {
+                    model.panTimeline(seconds: -Double(value.translation.width / width) * model.visibleSpan)
+                } else {
+                    let ratio = min(1, max(0, value.location.x / width))
+                    model.seek(to: model.visibleStart.addingTimeInterval(Double(ratio) * model.visibleSpan))
+                }
+            }
+    }
+
+    private func updateZoom(magnification: Double, anchorRatio: Double) {
+        if pinchBaseStart == nil {
+            pinchBaseStart = model.visibleStart
+            pinchBaseSpan = model.visibleSpan
+        }
+        suppressDrag = true
+        guard let baseStart = pinchBaseStart, let baseSpan = pinchBaseSpan else { return }
+        model.zoomTimeline(from: baseStart, span: baseSpan, magnification: magnification, anchorRatio: anchorRatio)
+    }
+
+    private func finishZoom() {
+        pinchBaseStart = nil
+        pinchBaseSpan = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { suppressDrag = false }
     }
 
     @ViewBuilder private func tickMarks(width: CGFloat) -> some View {

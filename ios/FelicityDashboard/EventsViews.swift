@@ -105,12 +105,20 @@ struct EventsView: View {
                             .padding(24)
                             .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 18))
                     } else if model.events.isEmpty {
-                        ContentUnavailableView(
-                            model.error.isEmpty ? "No matching events" : "3ye unavailable",
-                            systemImage: model.error.isEmpty ? "rectangle.stack.badge.person.crop" : "network.slash",
-                            description: Text(model.error)
-                        )
+                        VStack(spacing: 12) {
+                            Image(systemName: model.error.isEmpty ? "rectangle.stack.badge.person.crop" : "network.slash")
+                                .font(.system(size: 38, weight: .medium))
+                            Text(model.error.isEmpty ? "No matching events" : "3ye unavailable")
+                                .font(.headline)
+                            if !model.error.isEmpty {
+                                Text(model.error)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white.opacity(0.65))
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
                         .foregroundStyle(.white)
+                        .padding(28)
                     }
                 }
             }
