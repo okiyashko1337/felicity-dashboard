@@ -6,6 +6,12 @@
 - Cache the compact device summary for ten seconds so multiple local displays
   can refresh System and Today without repeating the daily aggregation query.
 
+## 0.14.2
+
+- Show all reported BMS modules, including a third battery, by module address.
+- Read additional BMS packets arriving after the configured minimum count.
+- Keep mobile clients and ESP32/Nextion firmware versions unchanged.
+
 ## 0.14.1
 
 - Show the installed Home Assistant app version beside the yin-yang mark on

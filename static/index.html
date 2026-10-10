@@ -213,17 +213,17 @@
         <h2 id="secondary-title" class="mt-1 text-xl font-semibold text-white">Второстепенные параметры</h2>
         <p class="mt-1 text-xs text-slate-500">BMS, температуры, DC-шина и резервный выход из последнего кадра.</p>
       </div>
-      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div id="bms-cards" class="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Модули батареи">
+        <p class="text-xs text-slate-500">Ожидание данных BMS</p>
+      </div>
+      <template id="bms-card-template">
         <article class="secondary-card rounded-3xl p-5">
-          <p class="min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">BMS-модуль 1</p>
-          <p class="mt-3"><strong id="bms1-soc" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">% SOC</small></p>
-          <p id="bms1-detail" class="mt-3 text-xs leading-5 text-slate-500">Ожидание данных BMS</p>
+          <p data-bms="title" class="min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500"></p>
+          <p class="mt-3"><strong data-bms="soc" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">% SOC</small></p>
+          <p data-bms="detail" class="mt-3 text-xs leading-5 text-slate-500"></p>
         </article>
-        <article class="secondary-card rounded-3xl p-5">
-          <p class="min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">BMS-модуль 2</p>
-          <p class="mt-3"><strong id="bms2-soc" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">% SOC</small></p>
-          <p id="bms2-detail" class="mt-3 text-xs leading-5 text-slate-500">Ожидание данных BMS</p>
-        </article>
+      </template>
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <article class="secondary-card rounded-3xl p-5">
           <p class="min-h-8 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Температуры</p>
           <p class="mt-3"><strong id="temperature-main" class="metric-value text-3xl font-semibold text-white">—</strong><small class="ml-1 text-xs text-slate-500">°C инвертор</small></p>
@@ -610,21 +610,27 @@
       requestAnimationFrame(() => document.body.classList.add("fresh-frame"));
     }
 
-    function updateBmsCard(prefix, battery) {
-      if (!battery) {
-        $(`${prefix}-soc`).textContent = "—";
-        $(`${prefix}-detail`).textContent = "Модуль BMS не найден";
-        return;
+    function updateBmsCards(batteries) {
+      const cards = document.createDocumentFragment();
+      for (const battery of [...batteries].sort((a, b) => a.mod_address - b.mod_address)) {
+        const card = $("bms-card-template").content.cloneNode(true);
+        card.querySelector('[data-bms="title"]').textContent = `BMS-модуль ${battery.mod_address ?? "—"}`;
+        card.querySelector('[data-bms="soc"]').textContent = fmt(battery.soc_percent, 0);
+        const stateLabel = battery.fault ? `ошибка ${battery.fault}` : battery.warning ? `предупреждение ${battery.warning}` : "норма";
+        card.querySelector('[data-bms="detail"]').textContent = `${fmt(battery.voltage_v, 1)} В · ${fmt(battery.current_a, 1)} А · Δ ${fmt(battery.cell_delta_mv, 0)} мВ · ${fmt(battery.temperature_c?.min, 1)}–${fmt(battery.temperature_c?.max, 1)} °C · SOH ${fmt(battery.soh_percent, 0)}% · ${stateLabel}`;
+        cards.append(card);
       }
-      $(`${prefix}-soc`).textContent = fmt(battery.soc_percent, 0);
-      const stateLabel = battery.fault ? `ошибка ${battery.fault}` : battery.warning ? `предупреждение ${battery.warning}` : "норма";
-      $(`${prefix}-detail`).textContent = `${fmt(battery.voltage_v, 1)} В · ${fmt(battery.current_a, 1)} А · Δ ${fmt(battery.cell_delta_mv, 0)} мВ · ${fmt(battery.temperature_c?.min, 1)}–${fmt(battery.temperature_c?.max, 1)} °C · SOH ${fmt(battery.soh_percent, 0)}% · ${stateLabel}`;
+      if (!batteries.length) {
+        const empty = document.createElement("p");
+        empty.className = "text-xs text-slate-500";
+        empty.textContent = "В последнем кадре нет данных BMS";
+        cards.append(empty);
+      }
+      $("bms-cards").replaceChildren(cards);
     }
 
     function updateSecondaryCards(data) {
-      const batteries = data.batteries || [];
-      updateBmsCard("bms1", batteries[0]);
-      updateBmsCard("bms2", batteries[1]);
+      updateBmsCards(data.batteries || []);
       $("temperature-main").textContent = fmt(data.temperature_c?.inverter, 1);
       $("temperature-detail").textContent = `DC ${fmt(data.temperature_c?.dc, 1)} °C · трансформатор ${fmt(data.temperature_c?.transformer, 1)} °C`;
       $("dc-bus").textContent = fmt(data.dc_bus_voltage_v?.total, 1);
