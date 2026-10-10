@@ -91,7 +91,6 @@ class FelicityLocalClient:
     def request(self, command: str = FELICITY_COMMAND) -> list[dict[str, Any]]:
         """Send one read-only local-monitor request and return all JSON packets."""
         response = bytearray()
-        complete_packets: list[dict[str, Any]] | None = None
         with socket.create_connection(
             (self.host, self.port), timeout=self.connect_timeout
         ) as connection:
@@ -111,31 +110,21 @@ class FelicityLocalClient:
                         "Felicity response exceeded the safe size limit"
                     )
 
-                if command == FELICITY_COMMAND:
-                    complete_packets = _try_complete_realtime_response(
-                        response,
-                        self.expected_bms_packets,
-                    )
-                    if complete_packets is not None:
-                        break
+                # expected_bms_packets is a minimum, not an end-of-response
+                # marker. Additional modules can arrive in later TCP chunks.
+                # Read until EOF or the normal idle timeout before decoding.
 
             if not response:
                 raise FelicityProtocolError("Felicity module returned an empty response")
 
-            if complete_packets is None:
-                try:
-                    packets = decode_json_stream(response.decode("utf-8"))
-                except UnicodeDecodeError as error:
-                    raise FelicityProtocolError(
-                        "Felicity module returned invalid UTF-8"
-                    ) from error
-                if command == FELICITY_COMMAND:
-                    _validate_complete_realtime_response(
-                        packets,
-                        self.expected_bms_packets,
-                    )
-            else:
-                packets = complete_packets
+            try:
+                packets = decode_json_stream(response.decode("utf-8"))
+            except UnicodeDecodeError as error:
+                raise FelicityProtocolError(
+                    "Felicity module returned invalid UTF-8"
+                ) from error
+            if command == FELICITY_COMMAND:
+                _validate_complete_realtime_response(packets, self.expected_bms_packets)
 
             # Only a decoded inverter+BMS response is acknowledged as complete.
             # An empty, truncated or partial response is closed without an ACK.
@@ -181,18 +170,6 @@ def _validate_complete_realtime_response(
             f"inverter packets={inverter_count}, "
             f"BMS packets={len(bms_addresses)}/{expected_bms_packets}"
         )
-
-
-def _try_complete_realtime_response(
-    response: bytes | bytearray,
-    expected_bms_packets: int,
-) -> list[dict[str, Any]] | None:
-    try:
-        packets = decode_json_stream(bytes(response).decode("utf-8"))
-        _validate_complete_realtime_response(packets, expected_bms_packets)
-    except (UnicodeDecodeError, FelicityProtocolError):
-        return None
-    return packets
 
 
 def _number(value: Any, default: float = 0.0) -> float:

@@ -20,7 +20,7 @@ class DashboardStaticTests(unittest.TestCase):
         self.assertIn('id="current-clock"', html)
         for scale in ("15m", "1h", "6h", "day"):
             self.assertIn(f'data-detail-scale="{scale}"', html)
-        for card in ("bms1-soc", "bms2-soc", "temperature-main", "dc-bus", "backup-power"):
+        for card in ("bms-cards", "bms-card-template", "temperature-main", "dc-bus", "backup-power"):
             self.assertIn(f'id="{card}"', html)
         self.assertIn("Текущий день", html)
         self.assertIn("00:00–23:59", html)

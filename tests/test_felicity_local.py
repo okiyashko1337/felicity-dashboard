@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import socket
 import tempfile
@@ -120,6 +122,35 @@ class FelicityLocalTests(unittest.TestCase):
         self.assertEqual(connection.timeouts, [1.5, 0.25])
         self.assertEqual(connection.shutdown_modes, [socket.SHUT_WR])
         self.assertTrue(connection.closed)
+
+    def test_client_collects_third_bms_after_configured_minimum(self) -> None:
+        initial = "".join(json.dumps(p) for p in
+                          [INVERTER_PACKET, BMS_PACKET_1, BMS_PACKET_2]).encode()
+        third = json.dumps({**BMS_PACKET_2, "ModAddr": 3}).encode()
+        connection = FakeConnection([initial, third[:40], third[40:], socket.timeout()])
+        with patch("felicity_local.socket.create_connection", return_value=connection):
+            packets = FelicityLocalClient(expected_bms_packets=2).request()
+        parsed = parse_realtime_packets(packets)
+        self.assertEqual([b["mod_address"] for b in parsed["batteries"]], [1, 2, 3])
+        self.assertEqual(connection.sent[-1], FELICITY_RESPONSE_ACK)
+
+    def test_client_rejects_truncated_extra_bms_without_ack(self) -> None:
+        initial = "".join(json.dumps(p) for p in
+                          [INVERTER_PACKET, BMS_PACKET_1, BMS_PACKET_2]).encode()
+        connection = FakeConnection([initial, b'{"Type":112,"ModAddr":3', socket.timeout()])
+        with patch("felicity_local.socket.create_connection", return_value=connection):
+            with self.assertRaisesRegex(FelicityProtocolError, "Incomplete JSON"):
+                FelicityLocalClient(expected_bms_packets=2).request()
+        self.assertNotIn(FELICITY_RESPONSE_ACK, connection.sent)
+
+    def test_client_still_requires_configured_minimum(self) -> None:
+        payload = "".join(json.dumps(p) for p in
+                          [INVERTER_PACKET, BMS_PACKET_1, BMS_PACKET_2]).encode()
+        connection = FakeConnection([payload, socket.timeout()])
+        with patch("felicity_local.socket.create_connection", return_value=connection):
+            with self.assertRaisesRegex(FelicityProtocolError, "BMS packets=2/3"):
+                FelicityLocalClient(expected_bms_packets=3).request()
+        self.assertNotIn(FELICITY_RESPONSE_ACK, connection.sent)
 
     def test_client_does_not_acknowledge_a_partial_realtime_response(self) -> None:
         payload = "".join(

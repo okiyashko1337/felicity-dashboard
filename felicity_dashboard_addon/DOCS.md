@@ -11,7 +11,7 @@ dashboard through Home Assistant Ingress.
 | `inverter_host` | Local IP address of the Felicity Wi-Fi module |
 | `inverter_port` | Local protocol port, normally `53970` |
 | `poll_interval` | Inverter polling interval in seconds; minimum and default are 5 |
-| `expected_bms_packets` | BMS packets expected before the TCP session closes |
+| `expected_bms_packets` | Minimum number of distinct BMS modules required for a valid response |
 | `system_interval` | Host-system metrics interval in seconds |
 | `nextion_enabled` | Starts the optional local UART Nextion bridge |
 | `nextion_port` | Stable serial path, preferably `/dev/serial/by-id/...` |
@@ -38,9 +38,12 @@ router.
 ## Collection and retention
 
 Polling runs no faster than every five seconds in this app. The collector waits
-for the inverter packet and all configured BMS packets, acknowledges the full
-response, closes the write side, waits for the peer to finish, and then closes
-the TCP session.
+until the receive idle timeout (normally 1.5 seconds) or EOF, collecting extra
+BMS modules even when `expected_bms_packets` is still 2. It validates the inverter
+packet and the configured minimum number of BMS modules before acknowledging
+the full response and closing the TCP session. Truncated responses are rejected.
+The dashboard shows every BMS module present in the latest frame, labelled by
+its actual module address.
 
 The database is included in app backups. The app stops during backup to create
 a consistent SQLite snapshot.
